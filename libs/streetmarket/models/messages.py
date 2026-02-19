@@ -1,7 +1,6 @@
 """Message types and payload models for the AI Street Market protocol."""
 
 from enum import StrEnum
-from typing import Any
 
 from pydantic import BaseModel, Field
 

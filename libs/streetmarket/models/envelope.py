@@ -1,7 +1,7 @@
 """Envelope model — the wire format for all messages on the bus."""
 
-import uuid
 import time
+import uuid
 from typing import Any
 
 from pydantic import BaseModel, Field

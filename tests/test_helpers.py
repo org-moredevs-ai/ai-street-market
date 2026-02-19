@@ -2,20 +2,16 @@
 
 import json
 
-import pytest
-
 from streetmarket import (
-    Envelope,
+    Bid,
     MessageType,
     Offer,
-    Bid,
     Topics,
     create_message,
     parse_message,
     parse_payload,
     validate_message,
 )
-
 
 # --- Factory ---
 

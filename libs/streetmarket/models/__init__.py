@@ -1,3 +1,11 @@
+from streetmarket.models.catalogue import (
+    ITEMS,
+    RECIPES,
+    CatalogueItem,
+    Recipe,
+    is_valid_item,
+    is_valid_recipe,
+)
 from streetmarket.models.envelope import Envelope
 from streetmarket.models.messages import (
     PAYLOAD_REGISTRY,
@@ -19,19 +27,25 @@ from streetmarket.models.topics import Topics, from_nats_subject, to_nats_subjec
 __all__ = [
     "Accept",
     "Bid",
+    "CatalogueItem",
     "Counter",
     "CraftComplete",
     "CraftStart",
     "Envelope",
     "Heartbeat",
+    "ITEMS",
     "Join",
     "MessageType",
     "Offer",
     "PAYLOAD_REGISTRY",
+    "RECIPES",
+    "Recipe",
     "Settlement",
     "Tick",
     "Topics",
     "ValidationResult",
     "from_nats_subject",
+    "is_valid_item",
+    "is_valid_recipe",
     "to_nats_subject",
 ]

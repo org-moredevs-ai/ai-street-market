@@ -3,7 +3,6 @@
 import asyncio
 
 import pytest
-
 from streetmarket import (
     Envelope,
     MarketBusClient,

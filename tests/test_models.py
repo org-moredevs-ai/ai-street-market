@@ -4,26 +4,24 @@ import json
 
 import pytest
 from pydantic import ValidationError
-
 from streetmarket import (
+    Accept,
+    Bid,
+    Counter,
+    CraftComplete,
+    CraftStart,
     Envelope,
+    Heartbeat,
+    Join,
     MessageType,
     Offer,
-    Bid,
-    Accept,
-    Counter,
-    CraftStart,
-    CraftComplete,
-    Join,
-    Heartbeat,
-    Tick,
     Settlement,
-    ValidationResult,
+    Tick,
     Topics,
-    to_nats_subject,
+    ValidationResult,
     from_nats_subject,
+    to_nats_subject,
 )
-
 
 # --- Topic conversion ---
 

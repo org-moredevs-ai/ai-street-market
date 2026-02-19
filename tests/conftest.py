@@ -3,7 +3,6 @@
 import os
 
 import pytest
-
 from streetmarket import MarketBusClient
 
 

@@ -4,7 +4,6 @@ from pydantic import ValidationError
 
 from streetmarket.models.envelope import Envelope
 from streetmarket.models.messages import PAYLOAD_REGISTRY, MessageType
-from streetmarket.models.topics import Topics
 
 
 def validate_message(envelope: Envelope) -> list[str]:

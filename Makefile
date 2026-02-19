@@ -1,4 +1,4 @@
-.PHONY: setup infra-up infra-down test lint proof-of-life
+.PHONY: setup infra-up infra-down test lint proof-of-life governor
 
 setup:
 	python3 -m venv .venv
@@ -20,3 +20,6 @@ lint:
 
 proof-of-life:
 	.venv/bin/python scripts/proof_of_life.py
+
+governor:
+	.venv/bin/python -m services.governor
