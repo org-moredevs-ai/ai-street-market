@@ -1,0 +1,21 @@
+services:
+  nats:
+    image: nats:2.10-alpine
+    container_name: streetmarket-nats
+    ports:
+      - "4222:4222"   # Client
+      - "8222:8222"   # Monitoring
+      - "8080:8080"   # WebSocket
+    volumes:
+      - ./nats/nats-server.conf:/etc/nats/nats-server.conf:ro
+      - nats-data:/data/jetstream
+    command: ["-c", "/etc/nats/nats-server.conf"]
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  nats-data:

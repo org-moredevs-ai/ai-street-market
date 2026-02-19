@@ -1,0 +1,16 @@
+[project]
+name = "streetmarket"
+version = "0.1.0"
+description = "Shared protocol library for AI Street Market"
+requires-python = ">=3.12"
+dependencies = [
+    "nats-py>=2.9",
+    "pydantic>=2.10",
+]
+
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["streetmarket*"]
