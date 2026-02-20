@@ -208,6 +208,31 @@ def process_craft_start(envelope: Envelope, state: BankerState) -> list[str]:
     return []
 
 
+def process_gather_result(envelope: Envelope, state: BankerState) -> list[str]:
+    """Handle a successful GATHER_RESULT: credit gathered items to agent inventory.
+
+    Auto-creates the agent's account if it doesn't exist (agents can gather
+    before formally joining).
+    """
+    agent_id = envelope.payload.get("agent_id", "")
+    item = envelope.payload.get("item", "")
+    quantity = envelope.payload.get("quantity", 0)
+
+    if not agent_id:
+        return ["Missing agent_id in GATHER_RESULT"]
+
+    if quantity <= 0:
+        return [f"Invalid quantity {quantity} in GATHER_RESULT"]
+
+    # Auto-create account if needed
+    if not state.has_account(agent_id):
+        state.create_account(agent_id, wallet=STARTING_WALLET)
+        logger.info("Auto-created account for '%s' via gather", agent_id)
+
+    state.credit_inventory(agent_id, item, quantity)
+    return []
+
+
 def process_craft_complete(envelope: Envelope, state: BankerState) -> list[str]:
     """Handle CRAFT_COMPLETE: credit output items to inventory."""
     errors: list[str] = []

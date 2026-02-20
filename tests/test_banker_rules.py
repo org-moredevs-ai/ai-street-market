@@ -7,6 +7,7 @@ from services.banker.rules import (
     process_bid,
     process_craft_complete,
     process_craft_start,
+    process_gather_result,
     process_join,
     process_offer,
 )
@@ -561,3 +562,106 @@ class TestProcessCraftComplete:
         errors = process_craft_complete(env, state)
         assert errors == []
         assert state.get_account("crafter-01").inventory["soup"] == 4  # type: ignore[union-attr]
+
+
+class TestProcessGatherResult:
+    def test_credits_inventory(self):
+        state = BankerState()
+        state.create_account("farmer-01")
+        env = _make_envelope(
+            MessageType.GATHER_RESULT,
+            {
+                "reference_msg_id": "msg-1",
+                "spawn_id": "sp-1",
+                "agent_id": "farmer-01",
+                "item": "potato",
+                "quantity": 5,
+                "success": True,
+            },
+            from_agent="world",
+            topic="/world/nature",
+        )
+        errors = process_gather_result(env, state)
+        assert errors == []
+        assert state.get_account("farmer-01").inventory["potato"] == 5  # type: ignore[union-attr]
+
+    def test_auto_creates_account(self):
+        state = BankerState()
+        assert not state.has_account("new-agent")
+        env = _make_envelope(
+            MessageType.GATHER_RESULT,
+            {
+                "reference_msg_id": "msg-1",
+                "spawn_id": "sp-1",
+                "agent_id": "new-agent",
+                "item": "wood",
+                "quantity": 3,
+                "success": True,
+            },
+            from_agent="world",
+            topic="/world/nature",
+        )
+        errors = process_gather_result(env, state)
+        assert errors == []
+        assert state.has_account("new-agent")
+        assert state.get_account("new-agent").inventory["wood"] == 3  # type: ignore[union-attr]
+        assert state.get_account("new-agent").wallet == STARTING_WALLET  # type: ignore[union-attr]
+
+    def test_stacks_with_existing_inventory(self):
+        state = BankerState()
+        _setup_agent_with_inventory(state, "farmer-01", {"potato": 10})
+        env = _make_envelope(
+            MessageType.GATHER_RESULT,
+            {
+                "reference_msg_id": "msg-1",
+                "spawn_id": "sp-1",
+                "agent_id": "farmer-01",
+                "item": "potato",
+                "quantity": 5,
+                "success": True,
+            },
+            from_agent="world",
+            topic="/world/nature",
+        )
+        errors = process_gather_result(env, state)
+        assert errors == []
+        assert state.get_account("farmer-01").inventory["potato"] == 15  # type: ignore[union-attr]
+
+    def test_missing_agent_id_rejected(self):
+        state = BankerState()
+        env = _make_envelope(
+            MessageType.GATHER_RESULT,
+            {
+                "reference_msg_id": "msg-1",
+                "spawn_id": "sp-1",
+                "agent_id": "",
+                "item": "potato",
+                "quantity": 5,
+                "success": True,
+            },
+            from_agent="world",
+            topic="/world/nature",
+        )
+        errors = process_gather_result(env, state)
+        assert len(errors) == 1
+        assert "Missing agent_id" in errors[0]
+
+    def test_zero_quantity_rejected(self):
+        state = BankerState()
+        state.create_account("farmer-01")
+        env = _make_envelope(
+            MessageType.GATHER_RESULT,
+            {
+                "reference_msg_id": "msg-1",
+                "spawn_id": "sp-1",
+                "agent_id": "farmer-01",
+                "item": "potato",
+                "quantity": 0,
+                "success": True,
+            },
+            from_agent="world",
+            topic="/world/nature",
+        )
+        errors = process_gather_result(env, state)
+        assert len(errors) == 1
+        assert "Invalid quantity" in errors[0]

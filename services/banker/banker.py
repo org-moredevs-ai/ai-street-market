@@ -16,6 +16,7 @@ from services.banker.rules import (
     process_bid,
     process_craft_complete,
     process_craft_start,
+    process_gather_result,
     process_join,
     process_offer,
 )
@@ -53,6 +54,9 @@ class BankerAgent:
 
         await self._bus.subscribe(Topics.TICK, self._on_tick)
         logger.info("Banker subscribed to %s", Topics.TICK)
+
+        await self._bus.subscribe("/world/>", self._on_world_message)
+        logger.info("Banker subscribed to world.>")
 
     async def stop(self) -> None:
         """Clean shutdown."""
@@ -130,6 +134,32 @@ class BankerAgent:
                             self._state.current_tick, envelope.from_agent)
 
         # COUNTER, HEARTBEAT, VALIDATION_RESULT, SETTLEMENT, TICK — ignored
+
+    async def _on_world_message(self, envelope: Envelope) -> None:
+        """Handle incoming world messages — credit inventory on successful gathers."""
+        if envelope.type != MessageType.GATHER_RESULT:
+            return
+
+        success = envelope.payload.get("success", False)
+        if not success:
+            return
+
+        errors = process_gather_result(envelope, self._state)
+        if errors:
+            logger.warning(
+                "[tick %d] GATHER_RESULT for %s failed: %s",
+                self._state.current_tick,
+                envelope.payload.get("agent_id", "?"),
+                errors,
+            )
+        else:
+            logger.info(
+                "[tick %d] GATHER_RESULT: credited %d %s to %s",
+                self._state.current_tick,
+                envelope.payload.get("quantity", 0),
+                envelope.payload.get("item", "?"),
+                envelope.payload.get("agent_id", "?"),
+            )
 
     async def _on_tick(self, envelope: Envelope) -> None:
         """Handle a system tick — advance state, purge expired orders."""

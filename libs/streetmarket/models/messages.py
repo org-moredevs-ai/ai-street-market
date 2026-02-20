@@ -19,6 +19,9 @@ class MessageType(StrEnum):
     TICK = "tick"
     SETTLEMENT = "settlement"
     VALIDATION_RESULT = "validation_result"
+    SPAWN = "spawn"
+    GATHER = "gather"
+    GATHER_RESULT = "gather_result"
 
 
 class Offer(BaseModel):
@@ -115,6 +118,34 @@ class ValidationResult(BaseModel):
     action: str | None = None
 
 
+class Spawn(BaseModel):
+    """World Engine spawn broadcast — available raw materials this tick."""
+
+    spawn_id: str
+    tick: int = Field(gt=0)
+    items: dict[str, int]
+
+
+class Gather(BaseModel):
+    """Agent request to claim resources from a spawn."""
+
+    spawn_id: str
+    item: str
+    quantity: int = Field(gt=0)
+
+
+class GatherResult(BaseModel):
+    """World Engine response to a gather request."""
+
+    reference_msg_id: str
+    spawn_id: str
+    agent_id: str
+    item: str
+    quantity: int
+    success: bool
+    reason: str | None = None
+
+
 # Registry mapping message types to their payload models
 PAYLOAD_REGISTRY: dict[MessageType, type[BaseModel]] = {
     MessageType.OFFER: Offer,
@@ -128,4 +159,7 @@ PAYLOAD_REGISTRY: dict[MessageType, type[BaseModel]] = {
     MessageType.TICK: Tick,
     MessageType.SETTLEMENT: Settlement,
     MessageType.VALIDATION_RESULT: ValidationResult,
+    MessageType.SPAWN: Spawn,
+    MessageType.GATHER: Gather,
+    MessageType.GATHER_RESULT: GatherResult,
 }

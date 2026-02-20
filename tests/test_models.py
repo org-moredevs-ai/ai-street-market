@@ -11,11 +11,14 @@ from streetmarket import (
     CraftComplete,
     CraftStart,
     Envelope,
+    Gather,
+    GatherResult,
     Heartbeat,
     Join,
     MessageType,
     Offer,
     Settlement,
+    Spawn,
     Tick,
     Topics,
     ValidationResult,
@@ -218,3 +221,80 @@ class TestEnvelope:
         )
         assert env.id  # non-empty UUID
         assert env.timestamp > 0
+
+
+# --- Spawn / Gather / GatherResult ---
+
+
+class TestSpawn:
+    def test_valid(self):
+        spawn = Spawn(spawn_id="sp-1", tick=1, items={"potato": 20, "wood": 15})
+        assert spawn.spawn_id == "sp-1"
+        assert spawn.tick == 1
+        assert spawn.items["potato"] == 20
+
+    def test_zero_tick_rejected(self):
+        with pytest.raises(ValidationError):
+            Spawn(spawn_id="sp-1", tick=0, items={"potato": 10})
+
+    def test_empty_items_allowed(self):
+        spawn = Spawn(spawn_id="sp-1", tick=1, items={})
+        assert spawn.items == {}
+
+
+class TestGather:
+    def test_valid(self):
+        gather = Gather(spawn_id="sp-1", item="potato", quantity=5)
+        assert gather.spawn_id == "sp-1"
+        assert gather.item == "potato"
+        assert gather.quantity == 5
+
+    def test_zero_quantity_rejected(self):
+        with pytest.raises(ValidationError):
+            Gather(spawn_id="sp-1", item="potato", quantity=0)
+
+    def test_negative_quantity_rejected(self):
+        with pytest.raises(ValidationError):
+            Gather(spawn_id="sp-1", item="potato", quantity=-1)
+
+
+class TestGatherResult:
+    def test_valid_success(self):
+        gr = GatherResult(
+            reference_msg_id="msg-1",
+            spawn_id="sp-1",
+            agent_id="farmer-01",
+            item="potato",
+            quantity=5,
+            success=True,
+        )
+        assert gr.success is True
+        assert gr.quantity == 5
+        assert gr.reason is None
+
+    def test_valid_failure(self):
+        gr = GatherResult(
+            reference_msg_id="msg-1",
+            spawn_id="sp-1",
+            agent_id="farmer-01",
+            item="potato",
+            quantity=0,
+            success=False,
+            reason="Spawn expired",
+        )
+        assert gr.success is False
+        assert gr.reason == "Spawn expired"
+        assert gr.quantity == 0
+
+    def test_partial_grant(self):
+        gr = GatherResult(
+            reference_msg_id="msg-1",
+            spawn_id="sp-1",
+            agent_id="farmer-01",
+            item="potato",
+            quantity=3,
+            success=True,
+            reason="Partial: only 3 remaining",
+        )
+        assert gr.quantity == 3
+        assert gr.success is True
