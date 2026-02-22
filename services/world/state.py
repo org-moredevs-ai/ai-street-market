@@ -1,11 +1,13 @@
 """In-memory state for the World Engine.
 
-Tracks the current tick, the active spawn pool, and handles
-FCFS resource claiming.
+Tracks the current tick, the active spawn pool, energy levels,
+and handles FCFS resource claiming.
 """
 
 import uuid
 from dataclasses import dataclass, field
+
+from streetmarket.models.energy import MAX_ENERGY, STARTING_ENERGY
 
 DEFAULT_SPAWN_TABLE: dict[str, int] = {
     "potato": 20,
@@ -29,11 +31,13 @@ class SpawnPool:
 
 @dataclass
 class WorldState:
-    """Tracks tick counter and active spawn pool for the World Engine."""
+    """Tracks tick counter, active spawn pool, and energy for the World Engine."""
 
     current_tick: int = 0
     _active_spawn: SpawnPool | None = None
     _spawn_table: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_SPAWN_TABLE))
+    _energy: dict[str, float] = field(default_factory=dict)
+    _sheltered: set[str] = field(default_factory=set)
 
     @property
     def active_spawn(self) -> SpawnPool | None:
@@ -81,3 +85,48 @@ class WorldState:
         granted = min(quantity, available)
         self._active_spawn.remaining[item] = available - granted
         return granted, None
+
+    # --- Energy operations ---
+
+    def register_energy(self, agent_id: str) -> None:
+        """Register an agent with starting energy (idempotent)."""
+        if agent_id not in self._energy:
+            self._energy[agent_id] = STARTING_ENERGY
+
+    def get_energy(self, agent_id: str) -> float:
+        """Get an agent's current energy. Returns 0 if unknown."""
+        return self._energy.get(agent_id, 0.0)
+
+    def set_energy(self, agent_id: str, value: float) -> None:
+        """Set an agent's energy, clamped to [0, MAX_ENERGY]."""
+        self._energy[agent_id] = max(0.0, min(value, MAX_ENERGY))
+
+    def deduct_energy(self, agent_id: str, amount: float) -> bool:
+        """Deduct energy from an agent. Returns False if insufficient."""
+        current = self._energy.get(agent_id, 0.0)
+        if current < amount:
+            return False
+        self._energy[agent_id] = current - amount
+        return True
+
+    def add_energy(self, agent_id: str, amount: float) -> float:
+        """Add energy to an agent, capped at MAX_ENERGY. Returns new value."""
+        current = self._energy.get(agent_id, 0.0)
+        new_val = min(current + amount, MAX_ENERGY)
+        self._energy[agent_id] = new_val
+        return new_val
+
+    def get_all_energy(self) -> dict[str, float]:
+        """Return a snapshot of all agent energy levels."""
+        return dict(self._energy)
+
+    def set_sheltered(self, agent_id: str, sheltered: bool) -> None:
+        """Mark whether an agent has shelter."""
+        if sheltered:
+            self._sheltered.add(agent_id)
+        else:
+            self._sheltered.discard(agent_id)
+
+    def is_sheltered(self, agent_id: str) -> bool:
+        """Check if an agent has shelter."""
+        return agent_id in self._sheltered

@@ -160,6 +160,30 @@ async function executeAction(action: Action): Promise<void> {
       state.actionsThisTick++;
       break;
     }
+
+    case "consume": {
+      await publishMessage(Topics.FOOD, MessageType.CONSUME, {
+        item: action.params.item,
+        quantity: action.params.quantity,
+      });
+      state.actionsThisTick++;
+      console.log(
+        `[tick ${tick}] ${AGENT_ID}: consuming ${action.params.quantity} ${action.params.item}`
+      );
+      break;
+    }
+
+    case "bid": {
+      const bidItem = action.params.item as string;
+      const bidTopic = topicForItem(bidItem);
+      await publishMessage(bidTopic, MessageType.BID, {
+        item: bidItem,
+        quantity: action.params.quantity,
+        max_price_per_unit: action.params.max_price_per_unit,
+      });
+      state.actionsThisTick++;
+      break;
+    }
   }
 }
 
@@ -273,10 +297,15 @@ async function main(): Promise<void> {
     })();
   }
 
-  // Subscribe to tick
+  // Subscribe to tick + energy updates
   await subscribe(Topics.TICK, async (env) => {
     if (env.type === MessageType.TICK) {
       await onTick(env.payload.tick_number as number);
+    } else if (env.type === MessageType.ENERGY_UPDATE) {
+      const levels = env.payload.energy_levels as Record<string, number>;
+      if (AGENT_ID in levels) {
+        state.energy = levels[AGENT_ID];
+      }
     }
   });
 

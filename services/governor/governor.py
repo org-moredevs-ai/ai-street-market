@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class GovernorAgent:
-    """The Governor validates every market message against Phase 1 rules.
+    """The Governor validates every market message against business rules.
 
     It subscribes to `market.>` (all market topics) and `/system/tick`.
     For each message, it runs structural + business rule validation and
@@ -41,7 +41,7 @@ class GovernorAgent:
         await self._bus.subscribe("/market/>", self._on_market_message)
         logger.info("Governor subscribed to market.>")
 
-        # Subscribe to system tick
+        # Subscribe to system tick (for TICK and ENERGY_UPDATE)
         await self._bus.subscribe(Topics.TICK, self._on_tick)
         logger.info("Governor subscribed to %s", Topics.TICK)
 
@@ -82,10 +82,19 @@ class GovernorAgent:
             await self._publish_result(envelope, valid=True)
 
     async def _on_tick(self, envelope: Envelope) -> None:
-        """Handle a system tick — advance state."""
-        tick_number = envelope.payload.get("tick_number", 0)
-        self._state.advance_tick(tick_number)
-        logger.info("Governor advanced to tick %d", tick_number)
+        """Handle system tick messages — TICK advances state, ENERGY_UPDATE updates snapshot."""
+        if envelope.type == MessageType.TICK:
+            tick_number = envelope.payload.get("tick_number", 0)
+            self._state.advance_tick(tick_number)
+            logger.info("Governor advanced to tick %d", tick_number)
+
+        elif envelope.type == MessageType.ENERGY_UPDATE:
+            energy_levels = envelope.payload.get("energy_levels", {})
+            self._state.update_energy(energy_levels)
+            logger.debug(
+                "Governor received energy update for %d agents",
+                len(energy_levels),
+            )
 
     async def _publish_result(
         self,
@@ -104,6 +113,7 @@ class GovernorAgent:
                 valid=valid,
                 reason=reason,
                 action=str(original.type),
+                agent_id=original.from_agent,
             ),
             tick=self._state.current_tick,
         )

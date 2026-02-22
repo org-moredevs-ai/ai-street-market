@@ -97,6 +97,14 @@ SERVICES: list[ServiceDefinition] = [
         critical=False,
         cwd=PROJECT_ROOT / "agents" / "lumberjack",
     ),
+    ServiceDefinition(
+        name="mason",
+        label="mason",
+        command=[sys.executable, "-m", "agents.mason"],
+        color="\033[93m",  # bright yellow
+        phase=3,
+        critical=False,
+    ),
 ]
 
 

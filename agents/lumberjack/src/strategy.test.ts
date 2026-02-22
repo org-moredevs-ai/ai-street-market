@@ -178,3 +178,91 @@ describe("Lumberjack Budget", () => {
     expect(actions).toHaveLength(0);
   });
 });
+
+describe("Lumberjack Energy", () => {
+  it("consumes soup when energy low", () => {
+    const state = makeState({ energy: 20, inventory: { soup: 1 } });
+    const actions = decide(state);
+    const consumes = actions.filter((a) => a.kind === "consume");
+    expect(consumes).toHaveLength(1);
+    expect(consumes[0].params.item).toBe("soup");
+  });
+
+  it("no consume when energy ok", () => {
+    const state = makeState({ energy: 80, inventory: { soup: 1 } });
+    const actions = decide(state);
+    const consumes = actions.filter((a) => a.kind === "consume");
+    expect(consumes).toHaveLength(0);
+  });
+
+  it("rest when critical — no gather or offer", () => {
+    const state = makeState({
+      energy: 5,
+      inventory: { soup: 1, wood: 10 },
+      currentSpawnId: "sp-1",
+      currentSpawnItems: { wood: 15 },
+    });
+    const actions = decide(state);
+    const kinds = new Set(actions.map((a) => a.kind));
+    expect(kinds).not.toContain("gather");
+    expect(kinds).not.toContain("offer");
+    const consumes = actions.filter((a) => a.kind === "consume");
+    expect(consumes).toHaveLength(1);
+  });
+
+  it("rest without soup — empty actions", () => {
+    const state = makeState({ energy: 5, inventory: {} });
+    const actions = decide(state);
+    expect(actions).toHaveLength(0);
+  });
+
+  it("bids for soup when needed", () => {
+    const state = makeState({ inventory: {} }); // no soup
+    const actions = decide(state);
+    const bids = actions.filter((a) => a.kind === "bid");
+    expect(bids).toHaveLength(1);
+    expect(bids[0].params.item).toBe("soup");
+    expect(bids[0].params.quantity).toBe(2);
+  });
+
+  it("no bid when has soup", () => {
+    const state = makeState({ inventory: { soup: 3 } });
+    const actions = decide(state);
+    const bids = actions.filter((a) => a.kind === "bid");
+    expect(bids).toHaveLength(0);
+  });
+
+  it("no bid when soup offers visible", () => {
+    const soupOffer: ObservedOffer = {
+      msgId: "off-1",
+      fromAgent: "chef-01",
+      item: "soup",
+      quantity: 5,
+      pricePerUnit: 2.0,
+      isSell: true,
+    };
+    const state = makeState({ inventory: {}, observedOffers: [soupOffer] });
+    const actions = decide(state);
+    const bids = actions.filter((a) => a.kind === "bid");
+    expect(bids).toHaveLength(0);
+  });
+
+  it("accepts soup offer when available", () => {
+    // Lumberjack doesn't auto-accept soup offers in strategy (could be added later)
+    // but it does bid for soup — this test verifies the bid is suppressed when offers exist
+    const soupOffer: ObservedOffer = {
+      msgId: "off-1",
+      fromAgent: "chef-01",
+      item: "soup",
+      quantity: 3,
+      pricePerUnit: 2.5,
+      isSell: true,
+    };
+    const state = makeState({ inventory: {}, observedOffers: [soupOffer] });
+    const actions = decide(state);
+    const bids = actions.filter(
+      (a) => a.kind === "bid" && a.params.item === "soup"
+    );
+    expect(bids).toHaveLength(0);
+  });
+});

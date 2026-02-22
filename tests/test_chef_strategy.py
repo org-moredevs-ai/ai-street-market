@@ -163,14 +163,22 @@ class TestChefCrafting:
 
 
 class TestChefSellSoup:
-    def test_offers_soup(self):
-        state = _make_state(inventory={"soup": 2})
+    def test_offers_soup_keeps_one_reserve(self):
+        """Chef keeps 1 soup in reserve for emergency consuming."""
+        state = _make_state(inventory={"soup": 3})
         actions = decide(state)
         offers = [a for a in actions if a.kind == ActionKind.OFFER]
         assert len(offers) == 1
         assert offers[0].params["item"] == "soup"
-        assert offers[0].params["quantity"] == 2
+        assert offers[0].params["quantity"] == 2  # 3 - 1 reserve
         assert offers[0].params["price_per_unit"] == 10.0
+
+    def test_no_offer_with_single_soup(self):
+        """Don't sell last soup — keep for emergency."""
+        state = _make_state(inventory={"soup": 1})
+        actions = decide(state)
+        offers = [a for a in actions if a.kind == ActionKind.OFFER]
+        assert len(offers) == 0
 
     def test_no_offer_without_soup(self):
         state = _make_state(inventory={})
@@ -224,7 +232,7 @@ class TestChefActionBudget:
     def test_respects_action_limit(self):
         state = _make_state(
             actions_this_tick=4,
-            inventory={"potato": 5, "onion": 5, "soup": 1},
+            inventory={"potato": 5, "onion": 5, "soup": 3},
         )
         actions = decide(state)
         assert len(actions) <= 1
@@ -233,3 +241,51 @@ class TestChefActionBudget:
         state = _make_state(actions_this_tick=5)
         actions = decide(state)
         assert len(actions) == 0
+
+
+class TestChefEnergy:
+    def test_consumes_soup_when_low_energy(self):
+        state = _make_state(energy=20.0, inventory={"soup": 2})
+        actions = decide(state)
+        consumes = [a for a in actions if a.kind == ActionKind.CONSUME]
+        assert len(consumes) == 1
+        assert consumes[0].params["item"] == "soup"
+
+    def test_no_consume_when_energy_ok(self):
+        state = _make_state(energy=80.0, inventory={"soup": 2})
+        actions = decide(state)
+        consumes = [a for a in actions if a.kind == ActionKind.CONSUME]
+        assert len(consumes) == 0
+
+    def test_no_consume_without_soup(self):
+        state = _make_state(energy=20.0, inventory={})
+        actions = decide(state)
+        consumes = [a for a in actions if a.kind == ActionKind.CONSUME]
+        assert len(consumes) == 0
+
+    def test_rest_when_critical_energy(self):
+        state = _make_state(
+            energy=5.0,
+            inventory={"soup": 1, "potato": 5, "onion": 3},
+        )
+        actions = decide(state)
+        kinds = {a.kind for a in actions}
+        assert ActionKind.CRAFT_START not in kinds
+        assert ActionKind.OFFER not in kinds
+        consumes = [a for a in actions if a.kind == ActionKind.CONSUME]
+        assert len(consumes) == 1
+
+    def test_rest_without_soup_returns_empty(self):
+        state = _make_state(energy=5.0, inventory={"potato": 5})
+        actions = decide(state)
+        assert len(actions) == 0
+
+    def test_consume_counts_against_budget(self):
+        state = _make_state(
+            energy=20.0,
+            inventory={"soup": 1, "potato": 5, "onion": 3},
+            actions_this_tick=4,
+        )
+        actions = decide(state)
+        assert len(actions) == 1
+        assert actions[0].kind == ActionKind.CONSUME

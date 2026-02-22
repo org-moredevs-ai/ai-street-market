@@ -10,6 +10,7 @@ class CatalogueItem(BaseModel):
     category: str  # raw, food, material, housing
     base_price: float = Field(gt=0)
     craftable: bool = False
+    energy_restore: float = 0.0
 
 
 class Recipe(BaseModel):
@@ -33,7 +34,7 @@ ITEMS: dict[str, CatalogueItem] = {
     "stone": CatalogueItem(name="stone", category="raw", base_price=4.0),
     # Crafted goods
     "soup": CatalogueItem(
-        name="soup", category="food", base_price=8.0, craftable=True
+        name="soup", category="food", base_price=8.0, craftable=True, energy_restore=30.0
     ),
     "shelf": CatalogueItem(
         name="shelf", category="material", base_price=10.0, craftable=True

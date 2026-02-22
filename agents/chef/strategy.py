@@ -1,10 +1,11 @@
 """Chef strategy — pure function, no I/O.
 
 Priority order each tick:
-1. ACCEPT cheapest OFFERs for potato/onion at <= 1.5x base_price
-2. CRAFT_START soup if has potato>=2 + onion>=1 and not crafting
-3. OFFER soup at 10.0 on /market/food
-4. BID for missing ingredients if no offers seen
+1. CONSUME soup if energy < 30 (eat own product)
+2. ACCEPT cheapest OFFERs for potato/onion at <= 1.5x base_price
+3. CRAFT_START soup if has potato>=2 + onion>=1 and not crafting
+4. OFFER soup at 10.0 on /market/food
+5. BID for missing ingredients if no offers seen
 """
 
 from streetmarket.agent.actions import Action, ActionKind
@@ -25,13 +26,33 @@ SOUP_SELL_PRICE = 10.0
 # Bid price multiplier (what we offer to pay)
 BID_MULTIPLIER = 1.3
 
+# Energy thresholds
+ENERGY_CONSUME_THRESHOLD = 30.0
+ENERGY_REST_THRESHOLD = 10.0
+
 
 def decide(state: AgentState) -> list[Action]:
     """Chef decision logic — returns actions to execute this tick."""
     actions: list[Action] = []
     budget = state.remaining_actions()
 
-    # 1. ACCEPT cheapest OFFERs for potato/onion at <= 1.5x base
+    # 0. If energy is critically low, rest (only consume)
+    if state.energy < ENERGY_REST_THRESHOLD:
+        if budget > 0 and state.inventory_count("soup") > 0:
+            actions.append(
+                Action(kind=ActionKind.CONSUME, params={"item": "soup", "quantity": 1})
+            )
+        return actions
+
+    # 1. CONSUME soup if energy is low
+    if state.energy < ENERGY_CONSUME_THRESHOLD and budget > 0:
+        if state.inventory_count("soup") > 0:
+            actions.append(
+                Action(kind=ActionKind.CONSUME, params={"item": "soup", "quantity": 1})
+            )
+            budget -= 1
+
+    # 2. ACCEPT cheapest OFFERs for potato/onion at <= 1.5x base
     sell_offers = sorted(
         [o for o in state.observed_offers if o.is_sell and o.item in INGREDIENTS],
         key=lambda o: o.price_per_unit,
@@ -54,7 +75,7 @@ def decide(state: AgentState) -> list[Action]:
             )
             budget -= 1
 
-    # 2. CRAFT_START soup if we have ingredients and not crafting
+    # 3. CRAFT_START soup if we have ingredients and not crafting
     if budget > 0 and not state.is_crafting():
         if state.has_items(SOUP_RECIPE.inputs):
             actions.append(
@@ -65,21 +86,23 @@ def decide(state: AgentState) -> list[Action]:
             )
             budget -= 1
 
-    # 3. OFFER soup if we have any
-    if budget > 0 and state.inventory_count("soup") > 0:
+    # 4. OFFER soup if we have any (keep 1 for emergency consuming)
+    soup_count = state.inventory_count("soup")
+    soup_to_sell = soup_count - 1 if soup_count > 1 else 0
+    if budget > 0 and soup_to_sell > 0:
         actions.append(
             Action(
                 kind=ActionKind.OFFER,
                 params={
                     "item": "soup",
-                    "quantity": state.inventory_count("soup"),
+                    "quantity": soup_to_sell,
                     "price_per_unit": SOUP_SELL_PRICE,
                 },
             )
         )
         budget -= 1
 
-    # 4. BID for missing ingredients if no offers seen
+    # 5. BID for missing ingredients if no offers seen
     if budget > 0 and not sell_offers:
         for ingredient in INGREDIENTS:
             if budget <= 0:

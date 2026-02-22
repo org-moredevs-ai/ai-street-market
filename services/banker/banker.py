@@ -3,6 +3,7 @@
 import logging
 
 from streetmarket import (
+    ConsumeResult,
     Envelope,
     MarketBusClient,
     MessageType,
@@ -14,6 +15,7 @@ from streetmarket import (
 from services.banker.rules import (
     process_accept,
     process_bid,
+    process_consume,
     process_craft_complete,
     process_craft_start,
     process_gather_result,
@@ -65,10 +67,10 @@ class BankerAgent:
 
     async def _on_market_message(self, envelope: Envelope) -> None:
         """Handle an incoming market message."""
-        # Skip our own settlement messages to avoid infinite loops
-        if (
-            envelope.from_agent == self.AGENT_ID
-            and envelope.type == MessageType.SETTLEMENT
+        # Skip our own settlement/consume_result messages to avoid infinite loops
+        if envelope.from_agent == self.AGENT_ID and envelope.type in (
+            MessageType.SETTLEMENT,
+            MessageType.CONSUME_RESULT,
         ):
             return
 
@@ -133,6 +135,38 @@ class BankerAgent:
                 logger.info("[tick %d] CRAFT_COMPLETE from %s — outputs credited",
                             self._state.current_tick, envelope.from_agent)
 
+        elif msg_type == MessageType.CONSUME:
+            consume_result = process_consume(envelope, self._state)
+            if consume_result.errors:
+                logger.warning("[tick %d] CONSUME from %s rejected: %s",
+                               self._state.current_tick, envelope.from_agent, consume_result.errors)
+                await self._publish_consume_result(
+                    consume_result.reference_msg_id,
+                    consume_result.agent_id,
+                    consume_result.item,
+                    consume_result.quantity,
+                    success=False,
+                    energy_restored=0.0,
+                    reason="; ".join(consume_result.errors),
+                )
+            else:
+                await self._publish_consume_result(
+                    consume_result.reference_msg_id,
+                    consume_result.agent_id,
+                    consume_result.item,
+                    consume_result.quantity,
+                    success=True,
+                    energy_restored=consume_result.energy_restored,
+                )
+                logger.info(
+                    "[tick %d] CONSUME from %s — %d %s consumed, %.1f energy to restore",
+                    self._state.current_tick,
+                    envelope.from_agent,
+                    consume_result.quantity,
+                    consume_result.item,
+                    consume_result.energy_restored,
+                )
+
         # COUNTER, HEARTBEAT, VALIDATION_RESULT, SETTLEMENT, TICK — ignored
 
     async def _on_world_message(self, envelope: Envelope) -> None:
@@ -163,6 +197,8 @@ class BankerAgent:
 
     async def _on_tick(self, envelope: Envelope) -> None:
         """Handle a system tick — advance state, purge expired orders."""
+        if envelope.type != MessageType.TICK:
+            return
         tick_number = envelope.payload.get("tick_number", 0)
         self._state.advance_tick(tick_number)
         expired = self._state.purge_expired_orders()
@@ -184,6 +220,35 @@ class BankerAgent:
                 quantity=result.quantity,
                 total_price=result.total_price,
                 status="completed",
+            ),
+            tick=self._state.current_tick,
+        )
+        await self._bus.publish(Topics.BANK, msg)
+
+    async def _publish_consume_result(
+        self,
+        reference_msg_id: str,
+        agent_id: str,
+        item: str,
+        quantity: int,
+        *,
+        success: bool,
+        energy_restored: float,
+        reason: str | None = None,
+    ) -> None:
+        """Publish a ConsumeResult message to the bank topic."""
+        msg = create_message(
+            from_agent=self.AGENT_ID,
+            topic=Topics.BANK,
+            msg_type=MessageType.CONSUME_RESULT,
+            payload=ConsumeResult(
+                reference_msg_id=reference_msg_id,
+                agent_id=agent_id,
+                item=item,
+                quantity=quantity,
+                success=success,
+                energy_restored=energy_restored,
+                reason=reason,
             ),
             tick=self._state.current_tick,
         )

@@ -1,6 +1,7 @@
-"""Tests for Governor Phase 1 business rules."""
+"""Tests for Governor business rules."""
 
 from streetmarket import Envelope, MessageType
+from streetmarket.models.energy import STARTING_ENERGY
 
 from services.governor.rules import validate_business_rules, validate_envelope_structure
 from services.governor.state import MAX_ACTIONS_PER_TICK, GovernorState
@@ -23,6 +24,15 @@ def _make_envelope(
     )
 
 
+def _state_with_energy(
+    agent_id: str = "farmer-01", energy: float = STARTING_ENERGY
+) -> GovernorState:
+    """Helper to build GovernorState with energy snapshot."""
+    state = GovernorState()
+    state.update_energy({agent_id: energy})
+    return state
+
+
 class TestEnvelopeStructure:
     def test_valid_offer_passes(self):
         env = _make_envelope(
@@ -40,7 +50,7 @@ class TestEnvelopeStructure:
 
 class TestRateLimit:
     def test_under_limit_passes(self):
-        state = GovernorState()
+        state = _state_with_energy()
         env = _make_envelope(
             MessageType.OFFER,
             {"item": "potato", "quantity": 5, "price_per_unit": 2.0},
@@ -51,7 +61,7 @@ class TestRateLimit:
         assert errors == []
 
     def test_at_limit_rejected(self):
-        state = GovernorState()
+        state = _state_with_energy()
         env = _make_envelope(
             MessageType.OFFER,
             {"item": "potato", "quantity": 5, "price_per_unit": 2.0},
@@ -63,7 +73,8 @@ class TestRateLimit:
         assert "Rate limited" in errors[0]
 
     def test_rate_limit_is_per_agent(self):
-        state = GovernorState()
+        state = _state_with_energy()
+        state.update_energy({"farmer-01": STARTING_ENERGY, "farmer-02": STARTING_ENERGY})
         for _ in range(MAX_ACTIONS_PER_TICK):
             state.record_action("farmer-01")
         env = _make_envelope(
@@ -77,7 +88,7 @@ class TestRateLimit:
 
 class TestInactiveAgent:
     def test_inactive_agent_warned(self):
-        state = GovernorState()
+        state = _state_with_energy()
         state.advance_tick(0)
         state.record_heartbeat("farmer-01")
         state.advance_tick(20)  # Well past timeout
@@ -89,7 +100,7 @@ class TestInactiveAgent:
         assert any("inactive" in e for e in errors)
 
     def test_active_agent_no_warning(self):
-        state = GovernorState()
+        state = _state_with_energy()
         state.advance_tick(5)
         state.record_heartbeat("farmer-01")
         state.advance_tick(10)
@@ -103,7 +114,7 @@ class TestInactiveAgent:
 
 class TestOfferValidation:
     def test_valid_item_passes(self):
-        state = GovernorState()
+        state = _state_with_energy()
         env = _make_envelope(
             MessageType.OFFER,
             {"item": "potato", "quantity": 10, "price_per_unit": 3.0},
@@ -111,7 +122,7 @@ class TestOfferValidation:
         assert validate_business_rules(env, state) == []
 
     def test_unknown_item_fails(self):
-        state = GovernorState()
+        state = _state_with_energy()
         env = _make_envelope(
             MessageType.OFFER,
             {"item": "diamond", "quantity": 1, "price_per_unit": 100.0},
@@ -120,7 +131,7 @@ class TestOfferValidation:
         assert any("Unknown item" in e for e in errors)
 
     def test_crafted_item_allowed_in_offer(self):
-        state = GovernorState()
+        state = _state_with_energy()
         env = _make_envelope(
             MessageType.OFFER,
             {"item": "soup", "quantity": 1, "price_per_unit": 8.0},
@@ -130,7 +141,7 @@ class TestOfferValidation:
 
 class TestBidValidation:
     def test_valid_item_passes(self):
-        state = GovernorState()
+        state = _state_with_energy()
         env = _make_envelope(
             MessageType.BID,
             {"item": "wood", "quantity": 5, "max_price_per_unit": 4.0},
@@ -138,7 +149,7 @@ class TestBidValidation:
         assert validate_business_rules(env, state) == []
 
     def test_unknown_item_fails(self):
-        state = GovernorState()
+        state = _state_with_energy()
         env = _make_envelope(
             MessageType.BID,
             {"item": "gold", "quantity": 1, "max_price_per_unit": 50.0},
@@ -168,7 +179,7 @@ class TestAcceptValidation:
 
 class TestCounterValidation:
     def test_with_reference_passes(self):
-        state = GovernorState()
+        state = _state_with_energy()
         env = _make_envelope(
             MessageType.COUNTER,
             {"reference_msg_id": "msg-123", "proposed_price": 5.0, "quantity": 3},
@@ -176,7 +187,7 @@ class TestCounterValidation:
         assert validate_business_rules(env, state) == []
 
     def test_empty_reference_fails(self):
-        state = GovernorState()
+        state = _state_with_energy()
         env = _make_envelope(
             MessageType.COUNTER,
             {"reference_msg_id": "", "proposed_price": 5.0, "quantity": 3},
@@ -187,7 +198,7 @@ class TestCounterValidation:
 
 class TestCraftStartValidation:
     def test_valid_recipe_passes(self):
-        state = GovernorState()
+        state = _state_with_energy()
         env = _make_envelope(
             MessageType.CRAFT_START,
             {"recipe": "soup", "inputs": {"potato": 2, "onion": 1}, "estimated_ticks": 2},
@@ -196,7 +207,7 @@ class TestCraftStartValidation:
         assert errors == []
 
     def test_unknown_recipe_fails(self):
-        state = GovernorState()
+        state = _state_with_energy()
         env = _make_envelope(
             MessageType.CRAFT_START,
             {"recipe": "cake", "inputs": {"sugar": 1}, "estimated_ticks": 1},
@@ -205,7 +216,7 @@ class TestCraftStartValidation:
         assert any("Unknown recipe" in e for e in errors)
 
     def test_wrong_inputs_fails(self):
-        state = GovernorState()
+        state = _state_with_energy()
         env = _make_envelope(
             MessageType.CRAFT_START,
             {"recipe": "soup", "inputs": {"potato": 1, "onion": 1}, "estimated_ticks": 2},
@@ -214,7 +225,7 @@ class TestCraftStartValidation:
         assert any("Inputs mismatch" in e for e in errors)
 
     def test_wrong_estimated_ticks_fails(self):
-        state = GovernorState()
+        state = _state_with_energy()
         env = _make_envelope(
             MessageType.CRAFT_START,
             {"recipe": "soup", "inputs": {"potato": 2, "onion": 1}, "estimated_ticks": 5},
@@ -223,7 +234,7 @@ class TestCraftStartValidation:
         assert any("ticks mismatch" in e for e in errors)
 
     def test_already_crafting_fails(self):
-        state = GovernorState()
+        state = _state_with_energy()
         state.start_craft("farmer-01", "shelf", 3)
         env = _make_envelope(
             MessageType.CRAFT_START,
@@ -233,7 +244,7 @@ class TestCraftStartValidation:
         assert any("already crafting" in e for e in errors)
 
     def test_valid_craft_updates_state(self):
-        state = GovernorState()
+        state = _state_with_energy()
         env = _make_envelope(
             MessageType.CRAFT_START,
             {"recipe": "soup", "inputs": {"potato": 2, "onion": 1}, "estimated_ticks": 2},

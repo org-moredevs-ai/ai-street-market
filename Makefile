@@ -1,4 +1,4 @@
-.PHONY: setup infra-up infra-down test lint proof-of-life governor banker world farmer chef lumberjack run-economy
+.PHONY: setup infra-up infra-down test lint proof-of-life governor banker world farmer chef lumberjack mason run-economy
 
 setup:
 	python3 -m venv .venv
@@ -38,6 +38,9 @@ chef:
 
 lumberjack:
 	cd agents/lumberjack && npx tsx src/index.ts
+
+mason:
+	.venv/bin/python -m agents.mason
 
 run-economy:
 	.venv/bin/python scripts/run_economy.py

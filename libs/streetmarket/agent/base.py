@@ -13,6 +13,7 @@ from streetmarket.models.envelope import Envelope
 from streetmarket.models.messages import (
     Accept,
     Bid,
+    Consume,
     CraftComplete,
     CraftStart,
     Gather,
@@ -84,7 +85,20 @@ class TradingAgent(ABC):
     # --- Message handlers ---
 
     async def _on_tick(self, envelope: Envelope) -> None:
-        """Handle a TICK message: advance state, auto-join, auto-heartbeat, run strategy."""
+        """Handle TICK and ENERGY_UPDATE messages."""
+        if envelope.type == MessageType.ENERGY_UPDATE:
+            energy_levels = envelope.payload.get("energy_levels", {})
+            my_energy = energy_levels.get(self.AGENT_ID)
+            if my_energy is not None:
+                self._state.energy = my_energy
+                logger.debug(
+                    "[tick %d] %s: energy updated to %.1f",
+                    self._state.current_tick,
+                    self.AGENT_ID,
+                    my_energy,
+                )
+            return
+
         if envelope.type != MessageType.TICK:
             return
 
@@ -391,3 +405,23 @@ class TradingAgent(ABC):
             self._state.add_inventory(recipe.output, recipe.output_quantity)
             self._state.active_craft = None
             self._state.actions_this_tick += 1
+
+        elif action.kind == ActionKind.CONSUME:
+            item = action.params["item"]
+            quantity = action.params.get("quantity", 1)
+            msg = create_message(
+                from_agent=self.AGENT_ID,
+                topic=Topics.FOOD,
+                msg_type=MessageType.CONSUME,
+                payload=Consume(item=item, quantity=quantity),
+                tick=tick,
+            )
+            await self._client.publish(Topics.FOOD, msg)
+            self._state.actions_this_tick += 1
+            logger.info(
+                "[tick %d] %s: consuming %d %s",
+                tick,
+                self.AGENT_ID,
+                quantity,
+                item,
+            )

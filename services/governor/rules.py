@@ -1,10 +1,11 @@
-"""Phase 1 business rule validation — pure functions.
+"""Business rule validation — pure functions.
 
-These rules validate market messages against the catalogue and game rules.
-No wallet or inventory checks (that's the Banker's job in Step 3).
+These rules validate market messages against the catalogue, game rules,
+and the energy system. No wallet or inventory checks (that's the Banker's job).
 """
 
 from streetmarket import (
+    ITEMS,
     RECIPES,
     Envelope,
     MessageType,
@@ -12,6 +13,7 @@ from streetmarket import (
     is_valid_recipe,
     validate_message,
 )
+from streetmarket.models.energy import ACTION_ENERGY_COSTS, FREE_AT_ZERO_ENERGY
 
 from services.governor.state import GovernorState
 
@@ -29,7 +31,7 @@ def validate_envelope_structure(envelope: Envelope) -> list[str]:
 
 
 def validate_business_rules(envelope: Envelope, state: GovernorState) -> list[str]:
-    """Validate an envelope against Phase 1 business rules.
+    """Validate an envelope against business rules.
 
     Returns a list of error strings. Empty list means valid.
     Side effects: updates state for join, heartbeat, craft_start, craft_complete.
@@ -45,6 +47,18 @@ def validate_business_rules(envelope: Envelope, state: GovernorState) -> list[st
     # Inactive agent check
     if state.is_inactive(agent_id):
         errors.append(f"Agent '{agent_id}' is inactive (no heartbeat)")
+
+    # Energy check — skip for free-at-zero actions
+    if msg_type not in FREE_AT_ZERO_ENERGY:
+        energy_cost = ACTION_ENERGY_COSTS.get(msg_type, 0.0)
+        if energy_cost > 0:
+            current_energy = state.get_energy(agent_id)
+            if current_energy < energy_cost:
+                errors.append(
+                    f"Insufficient energy: {agent_id} has {current_energy:.1f}, "
+                    f"needs {energy_cost:.1f} for {msg_type}"
+                )
+                return errors
 
     # Per-type validation
     if msg_type == MessageType.OFFER:
@@ -70,6 +84,9 @@ def validate_business_rules(envelope: Envelope, state: GovernorState) -> list[st
 
     elif msg_type == MessageType.HEARTBEAT:
         _handle_heartbeat(envelope, state)
+
+    elif msg_type == MessageType.CONSUME:
+        errors.extend(_validate_consume(envelope))
 
     return errors
 
@@ -163,6 +180,22 @@ def _validate_craft_complete(envelope: Envelope, state: GovernorState) -> list[s
         errors.append(f"Agent '{agent_id}' has no active craft to complete")
     else:
         state.complete_craft(agent_id)
+
+    return errors
+
+
+def _validate_consume(envelope: Envelope) -> list[str]:
+    """Validate consume: item must exist and be consumable (energy_restore > 0)."""
+    errors: list[str] = []
+    item = envelope.payload.get("item", "")
+
+    if not is_valid_item(item):
+        errors.append(f"Unknown item: '{item}'")
+        return errors
+
+    cat_item = ITEMS[item]
+    if cat_item.energy_restore <= 0:
+        errors.append(f"Item '{item}' is not consumable (no energy_restore)")
 
     return errors
 

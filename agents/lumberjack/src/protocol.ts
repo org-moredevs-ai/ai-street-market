@@ -19,6 +19,9 @@ export const MessageType = {
   SETTLEMENT: "settlement",
   CRAFT_START: "craft_start",
   CRAFT_COMPLETE: "craft_complete",
+  CONSUME: "consume",
+  CONSUME_RESULT: "consume_result",
+  ENERGY_UPDATE: "energy_update",
 } as const;
 
 export type MessageTypeValue = (typeof MessageType)[keyof typeof MessageType];

@@ -30,6 +30,7 @@ export interface AgentState {
   activeCraft: CraftingJob | null;
   observedOffers: ObservedOffer[];
   actionsThisTick: number;
+  energy: number;
 }
 
 export function createInitialState(agentId: string): AgentState {
@@ -45,6 +46,7 @@ export function createInitialState(agentId: string): AgentState {
     activeCraft: null,
     observedOffers: [],
     actionsThisTick: 0,
+    energy: 100,
   };
 }
 

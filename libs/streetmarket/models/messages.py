@@ -22,6 +22,9 @@ class MessageType(StrEnum):
     SPAWN = "spawn"
     GATHER = "gather"
     GATHER_RESULT = "gather_result"
+    CONSUME = "consume"
+    CONSUME_RESULT = "consume_result"
+    ENERGY_UPDATE = "energy_update"
 
 
 class Offer(BaseModel):
@@ -116,6 +119,7 @@ class ValidationResult(BaseModel):
     valid: bool
     reason: str | None = None
     action: str | None = None
+    agent_id: str | None = None
 
 
 class Spawn(BaseModel):
@@ -146,6 +150,32 @@ class GatherResult(BaseModel):
     reason: str | None = None
 
 
+class Consume(BaseModel):
+    """Agent consumes an inventory item for energy."""
+
+    item: str
+    quantity: int = Field(gt=0, default=1)
+
+
+class ConsumeResult(BaseModel):
+    """Banker confirms inventory deducted after a CONSUME."""
+
+    reference_msg_id: str
+    agent_id: str
+    item: str
+    quantity: int = Field(gt=0)
+    success: bool
+    energy_restored: float = 0.0
+    reason: str | None = None
+
+
+class EnergyUpdate(BaseModel):
+    """World broadcasts all energy levels each tick."""
+
+    tick: int = Field(gt=0)
+    energy_levels: dict[str, float]
+
+
 # Registry mapping message types to their payload models
 PAYLOAD_REGISTRY: dict[MessageType, type[BaseModel]] = {
     MessageType.OFFER: Offer,
@@ -162,4 +192,7 @@ PAYLOAD_REGISTRY: dict[MessageType, type[BaseModel]] = {
     MessageType.SPAWN: Spawn,
     MessageType.GATHER: Gather,
     MessageType.GATHER_RESULT: GatherResult,
+    MessageType.CONSUME: Consume,
+    MessageType.CONSUME_RESULT: ConsumeResult,
+    MessageType.ENERGY_UPDATE: EnergyUpdate,
 }

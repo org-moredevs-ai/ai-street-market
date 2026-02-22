@@ -14,6 +14,7 @@ class ActionKind(StrEnum):
     ACCEPT = "accept"
     CRAFT_START = "craft_start"
     CRAFT_COMPLETE = "craft_complete"
+    CONSUME = "consume"
     HEARTBEAT = "heartbeat"
     JOIN = "join"
 

@@ -6,12 +6,25 @@ when the operation succeeds.
 """
 
 import logging
+from dataclasses import dataclass, field
 
-from streetmarket import Envelope, MessageType
+from streetmarket import ITEMS, Envelope, MessageType
 
 from services.banker.state import STARTING_WALLET, BankerState, OrderEntry, TradeResult
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ConsumeResultData:
+    """Result of a CONSUME operation."""
+
+    errors: list[str] = field(default_factory=list)
+    agent_id: str = ""
+    item: str = ""
+    quantity: int = 0
+    energy_restored: float = 0.0
+    reference_msg_id: str = ""
 
 
 def process_join(envelope: Envelope, state: BankerState) -> list[str]:
@@ -248,3 +261,46 @@ def process_craft_complete(envelope: Envelope, state: BankerState) -> list[str]:
         state.credit_inventory(agent_id, item, qty)
 
     return []
+
+
+def process_consume(envelope: Envelope, state: BankerState) -> ConsumeResultData:
+    """Handle CONSUME: debit inventory, compute energy restoration.
+
+    Returns a ConsumeResultData with errors (if any) or success data.
+    """
+    result = ConsumeResultData()
+    agent_id = envelope.from_agent
+    item = envelope.payload.get("item", "")
+    quantity = envelope.payload.get("quantity", 1)
+
+    result.agent_id = agent_id
+    result.item = item
+    result.quantity = quantity
+    result.reference_msg_id = envelope.id
+
+    if not state.has_account(agent_id):
+        result.errors.append(f"No account for agent '{agent_id}'")
+        return result
+
+    if not state.has_inventory(agent_id, item, quantity):
+        result.errors.append(
+            f"Agent '{agent_id}' has insufficient {item}: needs {quantity}"
+        )
+        return result
+
+    cat_item = ITEMS.get(item)
+    if cat_item is None:
+        result.errors.append(f"Unknown item: '{item}'")
+        return result
+
+    if cat_item.energy_restore <= 0:
+        result.errors.append(f"Item '{item}' has no energy_restore value")
+        return result
+
+    # Debit inventory
+    state.debit_inventory(agent_id, item, quantity)
+
+    # Calculate energy restoration
+    result.energy_restored = cat_item.energy_restore * quantity
+
+    return result

@@ -27,6 +27,7 @@ class GovernorState:
     _last_heartbeat_tick: dict[str, int] = field(default_factory=dict)
     _active_crafts: dict[str, ActiveCraft] = field(default_factory=dict)
     _known_agents: set[str] = field(default_factory=set)
+    _agent_energy: dict[str, float] = field(default_factory=dict)
 
     def advance_tick(self, tick: int) -> None:
         """Move to a new tick and reset per-tick counters."""
@@ -87,3 +88,13 @@ class GovernorState:
     def get_active_craft(self, agent_id: str) -> ActiveCraft | None:
         """Get an agent's active craft, or None."""
         return self._active_crafts.get(agent_id)
+
+    # --- Energy snapshot (read-copy from ENERGY_UPDATE) ---
+
+    def update_energy(self, energy_levels: dict[str, float]) -> None:
+        """Replace energy snapshot from World Engine's ENERGY_UPDATE."""
+        self._agent_energy = dict(energy_levels)
+
+    def get_energy(self, agent_id: str) -> float:
+        """Get an agent's energy from the last snapshot. Returns 0 if unknown."""
+        return self._agent_energy.get(agent_id, 0.0)

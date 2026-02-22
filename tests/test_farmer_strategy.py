@@ -224,3 +224,56 @@ class TestFarmerActionBudget:
         state = _make_state(actions_this_tick=5)
         actions = decide(state)
         assert len(actions) == 0
+
+
+class TestFarmerEnergy:
+    def test_consumes_soup_when_low_energy(self):
+        state = _make_state(energy=20.0, inventory={"soup": 2})
+        actions = decide(state)
+        consumes = [a for a in actions if a.kind == ActionKind.CONSUME]
+        assert len(consumes) == 1
+        assert consumes[0].params["item"] == "soup"
+
+    def test_no_consume_when_energy_ok(self):
+        state = _make_state(energy=80.0, inventory={"soup": 2})
+        actions = decide(state)
+        consumes = [a for a in actions if a.kind == ActionKind.CONSUME]
+        assert len(consumes) == 0
+
+    def test_no_consume_without_soup(self):
+        state = _make_state(energy=20.0, inventory={})
+        actions = decide(state)
+        consumes = [a for a in actions if a.kind == ActionKind.CONSUME]
+        assert len(consumes) == 0
+
+    def test_rest_when_critical_energy(self):
+        """Below rest threshold, only consume (no gather/offer/accept)."""
+        state = _make_state(
+            energy=5.0,
+            inventory={"soup": 1, "potato": 10},
+            current_spawn_id="sp-1",
+            current_spawn_items={"potato": 20},
+        )
+        actions = decide(state)
+        # Should only have consume, no gather/offer
+        kinds = {a.kind for a in actions}
+        assert ActionKind.GATHER not in kinds
+        assert ActionKind.OFFER not in kinds
+        consumes = [a for a in actions if a.kind == ActionKind.CONSUME]
+        assert len(consumes) == 1
+
+    def test_rest_without_soup_returns_empty(self):
+        state = _make_state(energy=5.0, inventory={})
+        actions = decide(state)
+        assert len(actions) == 0
+
+    def test_consume_counts_against_budget(self):
+        state = _make_state(
+            energy=20.0,
+            inventory={"soup": 1, "potato": 10},
+            actions_this_tick=4,  # Only 1 action left
+        )
+        actions = decide(state)
+        # Should consume soup and have no budget left for other actions
+        assert len(actions) == 1
+        assert actions[0].kind == ActionKind.CONSUME

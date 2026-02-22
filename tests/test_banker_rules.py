@@ -5,6 +5,7 @@ from streetmarket import Envelope, MessageType
 from services.banker.rules import (
     process_accept,
     process_bid,
+    process_consume,
     process_craft_complete,
     process_craft_start,
     process_gather_result,
@@ -665,3 +666,120 @@ class TestProcessGatherResult:
         errors = process_gather_result(env, state)
         assert len(errors) == 1
         assert "Invalid quantity" in errors[0]
+
+
+class TestProcessConsume:
+    def test_successful_consume(self):
+        state = BankerState()
+        _setup_agent_with_inventory(state, "farmer-01", {"soup": 3})
+        env = _make_envelope(
+            MessageType.CONSUME,
+            {"item": "soup", "quantity": 1},
+            from_agent="farmer-01",
+        )
+        result = process_consume(env, state)
+        assert result.errors == []
+        assert result.agent_id == "farmer-01"
+        assert result.item == "soup"
+        assert result.quantity == 1
+        assert result.energy_restored == 30.0
+        # Soup debited
+        assert state.get_account("farmer-01").inventory.get("soup", 0) == 2  # type: ignore[union-attr]
+
+    def test_consume_multiple(self):
+        state = BankerState()
+        _setup_agent_with_inventory(state, "farmer-01", {"soup": 5})
+        env = _make_envelope(
+            MessageType.CONSUME,
+            {"item": "soup", "quantity": 2},
+            from_agent="farmer-01",
+        )
+        result = process_consume(env, state)
+        assert result.errors == []
+        assert result.energy_restored == 60.0  # 30 * 2
+        assert state.get_account("farmer-01").inventory.get("soup", 0) == 3  # type: ignore[union-attr]
+
+    def test_consume_no_account(self):
+        state = BankerState()
+        env = _make_envelope(
+            MessageType.CONSUME,
+            {"item": "soup", "quantity": 1},
+            from_agent="unknown-agent",
+        )
+        result = process_consume(env, state)
+        assert len(result.errors) == 1
+        assert "No account" in result.errors[0]
+
+    def test_consume_insufficient_inventory(self):
+        state = BankerState()
+        state.create_account("farmer-01")  # No soup
+        env = _make_envelope(
+            MessageType.CONSUME,
+            {"item": "soup", "quantity": 1},
+            from_agent="farmer-01",
+        )
+        result = process_consume(env, state)
+        assert len(result.errors) == 1
+        assert "insufficient" in result.errors[0]
+
+    def test_consume_non_consumable_item(self):
+        state = BankerState()
+        _setup_agent_with_inventory(state, "farmer-01", {"potato": 10})
+        env = _make_envelope(
+            MessageType.CONSUME,
+            {"item": "potato", "quantity": 1},
+            from_agent="farmer-01",
+        )
+        result = process_consume(env, state)
+        assert len(result.errors) == 1
+        assert "no energy_restore" in result.errors[0]
+        # Inventory not debited
+        assert state.get_account("farmer-01").inventory["potato"] == 10  # type: ignore[union-attr]
+
+    def test_consume_unknown_item(self):
+        state = BankerState()
+        state.create_account("farmer-01")
+        env = _make_envelope(
+            MessageType.CONSUME,
+            {"item": "diamond", "quantity": 1},
+            from_agent="farmer-01",
+        )
+        result = process_consume(env, state)
+        assert len(result.errors) == 1
+        # Either "insufficient" or "Unknown item" depending on order of checks
+        assert result.errors[0]  # Some error exists
+
+    def test_consume_last_item(self):
+        state = BankerState()
+        _setup_agent_with_inventory(state, "farmer-01", {"soup": 1})
+        env = _make_envelope(
+            MessageType.CONSUME,
+            {"item": "soup", "quantity": 1},
+            from_agent="farmer-01",
+        )
+        result = process_consume(env, state)
+        assert result.errors == []
+        assert state.get_account("farmer-01").inventory.get("soup", 0) == 0  # type: ignore[union-attr]
+
+    def test_consume_stores_reference_msg_id(self):
+        state = BankerState()
+        _setup_agent_with_inventory(state, "farmer-01", {"soup": 1})
+        env = _make_envelope(
+            MessageType.CONSUME,
+            {"item": "soup", "quantity": 1},
+            from_agent="farmer-01",
+        )
+        result = process_consume(env, state)
+        assert result.reference_msg_id == env.id
+
+    def test_consume_default_quantity_one(self):
+        state = BankerState()
+        _setup_agent_with_inventory(state, "farmer-01", {"soup": 2})
+        env = _make_envelope(
+            MessageType.CONSUME,
+            {"item": "soup"},
+            from_agent="farmer-01",
+        )
+        result = process_consume(env, state)
+        assert result.errors == []
+        assert result.quantity == 1

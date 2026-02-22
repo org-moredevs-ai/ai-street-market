@@ -1,9 +1,10 @@
 """Farmer strategy — pure function, no I/O.
 
 Priority order each tick:
-1. GATHER potato(10) + onion(8) from current spawn
-2. ACCEPT any BIDs for potato/onion at >= base_price
-3. OFFER surplus potato/onion at 1.2x base_price
+1. CONSUME soup if energy < 30
+2. GATHER potato(10) + onion(8) from current spawn
+3. ACCEPT any BIDs for potato/onion at >= base_price
+4. OFFER surplus potato/onion at 1.2x base_price
 """
 
 from streetmarket.agent.actions import Action, ActionKind
@@ -26,13 +27,33 @@ SELL_MULTIPLIER = 1.2
 # Minimum acceptable price (fraction of base_price)
 MIN_ACCEPT_FRACTION = 1.0
 
+# Energy thresholds
+ENERGY_CONSUME_THRESHOLD = 30.0
+ENERGY_REST_THRESHOLD = 10.0
+
 
 def decide(state: AgentState) -> list[Action]:
     """Farmer decision logic — returns actions to execute this tick."""
     actions: list[Action] = []
     budget = state.remaining_actions()
 
-    # 1. GATHER from current spawn
+    # 0. If energy is critically low, rest (do nothing except consume)
+    if state.energy < ENERGY_REST_THRESHOLD:
+        if budget > 0 and state.inventory_count("soup") > 0:
+            actions.append(
+                Action(kind=ActionKind.CONSUME, params={"item": "soup", "quantity": 1})
+            )
+        return actions
+
+    # 1. CONSUME soup if energy is low
+    if state.energy < ENERGY_CONSUME_THRESHOLD and budget > 0:
+        if state.inventory_count("soup") > 0:
+            actions.append(
+                Action(kind=ActionKind.CONSUME, params={"item": "soup", "quantity": 1})
+            )
+            budget -= 1
+
+    # 2. GATHER from current spawn
     if state.current_spawn_id:
         for item, qty in GATHER_PLAN:
             if budget <= 0:
@@ -52,7 +73,7 @@ def decide(state: AgentState) -> list[Action]:
                 )
                 budget -= 1
 
-    # 2. ACCEPT BIDs for potato/onion at >= base_price
+    # 3. ACCEPT BIDs for potato/onion at >= base_price
     for obs in state.observed_offers:
         if budget <= 0:
             break
@@ -75,7 +96,7 @@ def decide(state: AgentState) -> list[Action]:
             )
             budget -= 1
 
-    # 3. OFFER surplus potato/onion
+    # 4. OFFER surplus potato/onion
     for item, _ in GATHER_PLAN:
         if budget <= 0:
             break

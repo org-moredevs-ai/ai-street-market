@@ -7,7 +7,7 @@ from streetmarket.agent.state import AgentState, CraftingJob, ObservedOffer, Pen
 class TestActionKind:
     def test_all_kinds_exist(self):
         expected = {
-            "gather", "offer", "bid", "accept",
+            "gather", "offer", "bid", "accept", "consume",
             "craft_start", "craft_complete", "heartbeat", "join",
         }
         assert {k.value for k in ActionKind} == expected
@@ -175,3 +175,31 @@ class TestObservedOffer:
         )
         assert oo.from_agent == "farmer-01"
         assert oo.is_sell is True
+
+
+class TestAgentStateEnergy:
+    def test_default_energy(self):
+        state = AgentState(agent_id="test")
+        assert state.energy == 100.0
+
+    def test_custom_energy(self):
+        state = AgentState(agent_id="test", energy=50.0)
+        assert state.energy == 50.0
+
+    def test_energy_can_be_set(self):
+        state = AgentState(agent_id="test")
+        state.energy = 42.0
+        assert state.energy == 42.0
+
+    def test_advance_tick_preserves_energy(self):
+        state = AgentState(agent_id="test", energy=75.0)
+        state.advance_tick(5)
+        assert state.energy == 75.0
+
+    def test_consume_action_kind_exists(self):
+        assert ActionKind.CONSUME == "consume"
+
+    def test_consume_action_creation(self):
+        action = Action(kind=ActionKind.CONSUME, params={"item": "soup", "quantity": 1})
+        assert action.kind == ActionKind.CONSUME
+        assert action.params["item"] == "soup"

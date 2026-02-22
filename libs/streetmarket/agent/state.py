@@ -51,6 +51,7 @@ class AgentState:
     joined: bool = False
     wallet: float = 0.0
     inventory: dict[str, int] = field(default_factory=dict)
+    energy: float = 100.0
     current_tick: int = 0
     last_heartbeat_tick: int = 0
     current_spawn_id: str | None = None
