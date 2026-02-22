@@ -277,12 +277,13 @@ async function main(): Promise<void> {
     handler: (envelope: Envelope) => void | Promise<void>
   ): Promise<void> {
     const subject = toNatsSubject(topic);
-    const consumers = await jsm.consumers;
-    const consumer = await consumers.add("STREETMARKET", {
+    // Create ephemeral consumer via manager, then get consumable handle via JS client
+    const ci = await jsm.consumers.add("STREETMARKET", {
       filter_subject: subject,
       deliver_policy: DeliverPolicy.New,
       ack_policy: AckPolicy.Explicit,
     } as Partial<ConsumerConfig>);
+    const consumer = await js.consumers.get("STREETMARKET", ci.name);
     const messages = await consumer.consume();
     (async () => {
       for await (const msg of messages) {
