@@ -349,9 +349,6 @@ class TradingAgent(ABC):
         elif action.kind == ActionKind.CRAFT_START:
             recipe_name = action.params["recipe"]
             recipe = RECIPES[recipe_name]
-            # Deduct inputs from local inventory
-            for item, qty in recipe.inputs.items():
-                self._state.remove_inventory(item, qty)
             topic = topic_for_item(recipe.output)
             msg = create_message(
                 from_agent=self.AGENT_ID,
@@ -365,6 +362,9 @@ class TradingAgent(ABC):
                 tick=tick,
             )
             await self._client.publish(topic, msg)
+            # Deduct inputs after successful publish to avoid state corruption
+            for item, qty in recipe.inputs.items():
+                self._state.remove_inventory(item, qty)
             self._state.active_craft = CraftingJob(
                 recipe=recipe_name,
                 started_tick=tick,

@@ -107,7 +107,7 @@ async function executeAction(action: Action): Promise<void> {
     case "offer": {
       const item = action.params.item as string;
       const topic = topicForItem(item);
-      const msg = await publishMessage(topic, MessageType.OFFER, {
+      await publishMessage(topic, MessageType.OFFER, {
         item,
         quantity: action.params.quantity,
         price_per_unit: action.params.price_per_unit,
