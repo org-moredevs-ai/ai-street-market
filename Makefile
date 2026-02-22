@@ -1,4 +1,4 @@
-.PHONY: setup infra-up infra-down test lint proof-of-life governor banker world
+.PHONY: setup infra-up infra-down test lint proof-of-life governor banker world farmer chef lumberjack
 
 setup:
 	python3 -m venv .venv
@@ -29,3 +29,12 @@ banker:
 
 world:
 	.venv/bin/python -m services.world
+
+farmer:
+	.venv/bin/python -m agents.farmer
+
+chef:
+	.venv/bin/python -m agents.chef
+
+lumberjack:
+	cd agents/lumberjack && npx tsx src/index.ts

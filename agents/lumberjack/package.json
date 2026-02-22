@@ -1,0 +1,19 @@
+{
+  "name": "lumberjack-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "npx tsx src/index.ts",
+    "test": "npx vitest run"
+  },
+  "dependencies": {
+    "nats": "^2.28.0",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

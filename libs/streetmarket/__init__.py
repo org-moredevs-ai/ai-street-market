@@ -1,7 +1,17 @@
 """AI Street Market — shared protocol library."""
 
+from streetmarket.agent import (
+    Action,
+    ActionKind,
+    AgentState,
+    CraftingJob,
+    ObservedOffer,
+    PendingOffer,
+    TradingAgent,
+)
 from streetmarket.client.nats_client import MarketBusClient
 from streetmarket.helpers.factory import create_message, parse_message, parse_payload
+from streetmarket.helpers.topic_map import topic_for_item
 from streetmarket.helpers.validation import validate_message
 from streetmarket.models.catalogue import (
     ITEMS,
@@ -35,6 +45,14 @@ from streetmarket.models.topics import Topics, from_nats_subject, to_nats_subjec
 __all__ = [
     # Client
     "MarketBusClient",
+    # Agent SDK
+    "Action",
+    "ActionKind",
+    "AgentState",
+    "CraftingJob",
+    "ObservedOffer",
+    "PendingOffer",
+    "TradingAgent",
     # Models
     "Accept",
     "Bid",
@@ -66,5 +84,6 @@ __all__ = [
     "parse_message",
     "parse_payload",
     "to_nats_subject",
+    "topic_for_item",
     "validate_message",
 ]

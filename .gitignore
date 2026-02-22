@@ -40,5 +40,9 @@ docker-compose.override.yml
 # NATS
 jetstream/
 
+# Node.js (Lumberjack agent)
+agents/lumberjack/node_modules/
+agents/lumberjack/dist/
+
 # Internal references
 references/
