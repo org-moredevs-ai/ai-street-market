@@ -53,23 +53,31 @@ export function decide(state: AgentState): Action[] {
 
   // 0. If energy critically low, rest (only consume)
   if (state.energy < ENERGY_REST_THRESHOLD) {
-    if (budget > 0 && inventoryCount(state, "soup") > 0) {
-      actions.push({
-        kind: "consume",
-        params: { item: "soup", quantity: 1 },
-      });
+    if (budget > 0) {
+      for (const food of ["soup", "bread"]) {
+        if (inventoryCount(state, food) > 0) {
+          actions.push({
+            kind: "consume",
+            params: { item: food, quantity: 1 },
+          });
+          break;
+        }
+      }
     }
     return actions;
   }
 
-  // 1. CONSUME soup if energy low
+  // 1. CONSUME soup/bread if energy low
   if (state.energy < ENERGY_CONSUME_THRESHOLD && budget > 0) {
-    if (inventoryCount(state, "soup") > 0) {
-      actions.push({
-        kind: "consume",
-        params: { item: "soup", quantity: 1 },
-      });
-      budget--;
+    for (const food of ["soup", "bread"]) {
+      if (inventoryCount(state, food) > 0) {
+        actions.push({
+          kind: "consume",
+          params: { item: food, quantity: 1 },
+        });
+        budget--;
+        break;
+      }
     }
   }
 
@@ -134,12 +142,16 @@ export function decide(state: AgentState): Action[] {
     }
   }
 
-  // 6. BID for soup if no soup in inventory and no soup offers visible
-  if (budget > 0 && inventoryCount(state, "soup") === 0) {
-    const soupOffers = state.observedOffers.filter(
-      (o) => o.isSell && o.item === "soup"
+  // 6. BID for soup/bread if none in inventory and no food offers visible
+  if (
+    budget > 0 &&
+    inventoryCount(state, "soup") === 0 &&
+    inventoryCount(state, "bread") === 0
+  ) {
+    const foodOffers = state.observedOffers.filter(
+      (o) => o.isSell && (o.item === "soup" || o.item === "bread")
     );
-    if (soupOffers.length === 0) {
+    if (foodOffers.length === 0) {
       actions.push({
         kind: "bid",
         params: {

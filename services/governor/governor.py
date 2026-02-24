@@ -45,6 +45,10 @@ class GovernorAgent:
         await self._bus.subscribe(Topics.TICK, self._on_tick)
         logger.info("Governor subscribed to %s", Topics.TICK)
 
+        # Subscribe to bank topic for BANKRUPTCY messages
+        await self._bus.subscribe(Topics.BANK, self._on_bank_message)
+        logger.info("Governor subscribed to %s", Topics.BANK)
+
     async def stop(self) -> None:
         """Clean shutdown."""
         await self._bus.close()
@@ -94,6 +98,20 @@ class GovernorAgent:
             logger.debug(
                 "Governor received energy update for %d agents",
                 len(energy_levels),
+            )
+
+    async def _on_bank_message(self, envelope: Envelope) -> None:
+        """Handle bank messages — process BANKRUPTCY notifications."""
+        if envelope.type != MessageType.BANKRUPTCY:
+            return
+
+        agent_id = envelope.payload.get("agent_id", "")
+        if agent_id:
+            self._state.mark_bankrupt(agent_id)
+            logger.warning(
+                "[tick %d] Governor received BANKRUPTCY for %s",
+                self._state.current_tick,
+                agent_id,
             )
 
     async def _publish_result(

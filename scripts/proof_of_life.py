@@ -8,13 +8,6 @@ import asyncio
 import os
 import sys
 
-
-# Handle unhandled rejections
-def _unhandled_exception(loop, context):
-    msg = context.get("exception", context["message"])
-    print(f"Unhandled error: {msg}", file=sys.stderr)
-    sys.exit(1)
-
 from streetmarket import (
     Accept,
     Bid,
@@ -27,6 +20,13 @@ from streetmarket import (
     parse_payload,
     validate_message,
 )
+
+
+# Handle unhandled rejections
+def _unhandled_exception(loop, context):
+    msg = context.get("exception", context["message"])
+    print(f"Unhandled error: {msg}", file=sys.stderr)
+    sys.exit(1)
 
 
 async def main() -> None:

@@ -60,6 +60,9 @@ class AgentState:
     pending_offers: dict[str, PendingOffer] = field(default_factory=dict)
     observed_offers: list[ObservedOffer] = field(default_factory=list)
     actions_this_tick: int = 0
+    rent_due_this_tick: float = 0.0
+    is_bankrupt: bool = False
+    storage_limit: int = 50  # Updated from RENT_DUE messages or shelf count
 
     # --- Helpers ---
 
@@ -99,8 +102,17 @@ class AgentState:
             del self.inventory[item]
         return True
 
+    def total_inventory(self) -> int:
+        """Return total number of items in inventory."""
+        return sum(self.inventory.values())
+
+    def storage_remaining(self) -> int:
+        """Return how much storage space is available."""
+        return max(0, self.storage_limit - self.total_inventory())
+
     def advance_tick(self, tick: int) -> None:
         """Advance to a new tick — reset per-tick state."""
         self.current_tick = tick
         self.actions_this_tick = 0
         self.observed_offers.clear()
+        self.rent_due_this_tick = 0.0

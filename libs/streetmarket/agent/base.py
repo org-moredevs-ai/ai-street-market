@@ -26,6 +26,7 @@ from streetmarket.models.messages import (
     Spawn,
     Tick,
 )
+from streetmarket.models.rent import STORAGE_BASE_LIMIT, STORAGE_MAX_SHELVES, STORAGE_PER_SHELF
 from streetmarket.models.topics import Topics
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,8 @@ class TradingAgent(ABC):
         await self._client.subscribe(
             Topics.agent_inbox(self.AGENT_ID), self._on_inbox
         )
+        # Subscribe to bank topic for RENT_DUE and BANKRUPTCY
+        await self._client.subscribe(Topics.BANK, self._on_bank)
 
         logger.info("%s connected and listening", self.AGENT_NAME)
 
@@ -145,7 +148,16 @@ class TradingAgent(ABC):
             await self._execute_action(action)
 
     async def _on_nature(self, envelope: Envelope) -> None:
-        """Handle SPAWN and GATHER_RESULT messages."""
+        """Handle SPAWN, GATHER_RESULT, and NATURE_EVENT messages."""
+        if envelope.type == MessageType.NATURE_EVENT:
+            logger.info(
+                "[tick %d] %s: nature event — %s",
+                self._state.current_tick,
+                self.AGENT_ID,
+                envelope.payload.get("title", ""),
+            )
+            return
+
         if envelope.type == MessageType.SPAWN:
             payload = Spawn.model_validate(envelope.payload)
             self._state.current_spawn_id = payload.spawn_id
@@ -235,6 +247,38 @@ class TradingAgent(ABC):
             self.AGENT_ID,
             envelope.type,
         )
+
+    async def _on_bank(self, envelope: Envelope) -> None:
+        """Handle bank messages: RENT_DUE, BANKRUPTCY."""
+        if envelope.type == MessageType.RENT_DUE:
+            agent_id = envelope.payload.get("agent_id", "")
+            if agent_id == self.AGENT_ID:
+                amount = envelope.payload.get("amount", 0.0)
+                wallet_after = envelope.payload.get("wallet_after", self._state.wallet)
+                self._state.rent_due_this_tick = amount
+                self._state.wallet = wallet_after
+                logger.info(
+                    "[tick %d] %s: rent due %.2f, wallet now %.2f",
+                    self._state.current_tick,
+                    self.AGENT_ID,
+                    amount,
+                    wallet_after,
+                )
+        elif envelope.type == MessageType.BANKRUPTCY:
+            agent_id = envelope.payload.get("agent_id", "")
+            if agent_id == self.AGENT_ID:
+                self._state.is_bankrupt = True
+                logger.warning(
+                    "[tick %d] %s: BANKRUPT — %s",
+                    self._state.current_tick,
+                    self.AGENT_ID,
+                    envelope.payload.get("reason", ""),
+                )
+
+    def _update_storage_limit(self) -> None:
+        """Recalculate storage limit based on current shelf count."""
+        shelves = min(self._state.inventory.get("shelf", 0), STORAGE_MAX_SHELVES)
+        self._state.storage_limit = STORAGE_BASE_LIMIT + shelves * STORAGE_PER_SHELF
 
     # --- Action execution ---
 

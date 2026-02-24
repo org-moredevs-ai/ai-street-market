@@ -40,6 +40,10 @@ def validate_business_rules(envelope: Envelope, state: GovernorState) -> list[st
     agent_id = envelope.from_agent
     msg_type = envelope.type
 
+    # Bankruptcy check — bankrupt agents cannot do anything
+    if state.is_bankrupt(agent_id):
+        return [f"Agent '{agent_id}' is bankrupt and cannot perform actions"]
+
     # Rate limit check (before recording — checked against actions already taken)
     if state.is_rate_limited(agent_id):
         return [f"Rate limited: {agent_id} exceeded max actions this tick"]

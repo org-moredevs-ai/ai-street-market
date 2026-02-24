@@ -46,19 +46,24 @@ def decide(state: AgentState) -> list[Action]:
 
     # 0. If energy critically low, rest (only consume)
     if state.energy < ENERGY_REST_THRESHOLD:
-        if budget > 0 and state.inventory_count("soup") > 0:
-            actions.append(
-                Action(kind=ActionKind.CONSUME, params={"item": "soup", "quantity": 1})
-            )
+        if budget > 0:
+            for food in ("soup", "bread"):
+                if state.inventory_count(food) > 0:
+                    actions.append(
+                        Action(kind=ActionKind.CONSUME, params={"item": food, "quantity": 1})
+                    )
+                    break
         return actions
 
-    # 1. CONSUME soup if energy low
+    # 1. CONSUME soup/bread if energy low
     if state.energy < ENERGY_CONSUME_THRESHOLD and budget > 0:
-        if state.inventory_count("soup") > 0:
-            actions.append(
-                Action(kind=ActionKind.CONSUME, params={"item": "soup", "quantity": 1})
-            )
-            budget -= 1
+        for food in ("soup", "bread"):
+            if state.inventory_count(food) > 0:
+                actions.append(
+                    Action(kind=ActionKind.CONSUME, params={"item": food, "quantity": 1})
+                )
+                budget -= 1
+                break
 
     # 2. GATHER stone from current spawn
     if state.current_spawn_id:

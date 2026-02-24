@@ -25,6 +25,9 @@ class MessageType(StrEnum):
     CONSUME = "consume"
     CONSUME_RESULT = "consume_result"
     ENERGY_UPDATE = "energy_update"
+    RENT_DUE = "rent_due"
+    BANKRUPTCY = "bankruptcy"
+    NATURE_EVENT = "nature_event"
 
 
 class Offer(BaseModel):
@@ -176,6 +179,34 @@ class EnergyUpdate(BaseModel):
     energy_levels: dict[str, float]
 
 
+class RentDue(BaseModel):
+    """Banker notifies an agent that rent was deducted."""
+
+    agent_id: str
+    amount: float = Field(ge=0)
+    wallet_after: float
+    exempt: bool = False
+    reason: str | None = None
+
+
+class Bankruptcy(BaseModel):
+    """Banker declares an agent bankrupt."""
+
+    agent_id: str
+    reason: str
+
+
+class NatureEvent(BaseModel):
+    """World broadcasts a nature event affecting spawns."""
+
+    event_id: str
+    title: str
+    description: str
+    effects: dict[str, float]  # item -> multiplier (e.g. {"potato": 0.5} = half)
+    duration_ticks: int = Field(gt=0)
+    remaining_ticks: int = Field(gt=0)
+
+
 # Registry mapping message types to their payload models
 PAYLOAD_REGISTRY: dict[MessageType, type[BaseModel]] = {
     MessageType.OFFER: Offer,
@@ -195,4 +226,7 @@ PAYLOAD_REGISTRY: dict[MessageType, type[BaseModel]] = {
     MessageType.CONSUME: Consume,
     MessageType.CONSUME_RESULT: ConsumeResult,
     MessageType.ENERGY_UPDATE: EnergyUpdate,
+    MessageType.RENT_DUE: RentDue,
+    MessageType.BANKRUPTCY: Bankruptcy,
+    MessageType.NATURE_EVENT: NatureEvent,
 }

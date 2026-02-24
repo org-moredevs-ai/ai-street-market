@@ -38,6 +38,7 @@ class WorldState:
     _spawn_table: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_SPAWN_TABLE))
     _energy: dict[str, float] = field(default_factory=dict)
     _sheltered: set[str] = field(default_factory=set)
+    _gather_history: list[dict] = field(default_factory=list)
 
     @property
     def active_spawn(self) -> SpawnPool | None:
@@ -130,3 +131,21 @@ class WorldState:
     def is_sheltered(self, agent_id: str) -> bool:
         """Check if an agent has shelter."""
         return agent_id in self._sheltered
+
+    # --- Gather history ---
+
+    def record_gather(self, agent_id: str, item: str, quantity: int) -> None:
+        """Record a successful gather for nature intelligence context."""
+        self._gather_history.append({
+            "agent": agent_id,
+            "item": item,
+            "quantity": quantity,
+            "tick": self.current_tick,
+        })
+        # Keep only last 50
+        if len(self._gather_history) > 50:
+            self._gather_history = self._gather_history[-50:]
+
+    def get_recent_gathers(self) -> list[dict]:
+        """Get the recent gather history."""
+        return list(self._gather_history)

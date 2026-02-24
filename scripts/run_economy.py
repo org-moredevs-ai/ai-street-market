@@ -105,6 +105,22 @@ SERVICES: list[ServiceDefinition] = [
         phase=3,
         critical=False,
     ),
+    ServiceDefinition(
+        name="baker",
+        label="baker",
+        command=[sys.executable, "-m", "agents.baker"],
+        color="\033[92m",  # bright green
+        phase=3,
+        critical=False,
+    ),
+    ServiceDefinition(
+        name="builder",
+        label="builder",
+        command=[sys.executable, "-m", "agents.builder"],
+        color="\033[94m",  # bright blue
+        phase=3,
+        critical=False,
+    ),
 ]
 
 

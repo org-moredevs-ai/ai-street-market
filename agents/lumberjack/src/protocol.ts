@@ -22,6 +22,9 @@ export const MessageType = {
   CONSUME: "consume",
   CONSUME_RESULT: "consume_result",
   ENERGY_UPDATE: "energy_update",
+  RENT_DUE: "rent_due",
+  BANKRUPTCY: "bankruptcy",
+  NATURE_EVENT: "nature_event",
 } as const;
 
 export type MessageTypeValue = (typeof MessageType)[keyof typeof MessageType];
@@ -84,6 +87,7 @@ const ITEM_CATEGORY: Record<string, string> = {
   nails: "raw",
   stone: "raw",
   soup: "food",
+  bread: "food",
   shelf: "material",
   wall: "material",
   furniture: "housing",

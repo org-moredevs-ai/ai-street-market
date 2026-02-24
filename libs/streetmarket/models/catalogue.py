@@ -36,6 +36,9 @@ ITEMS: dict[str, CatalogueItem] = {
     "soup": CatalogueItem(
         name="soup", category="food", base_price=8.0, craftable=True, energy_restore=30.0
     ),
+    "bread": CatalogueItem(
+        name="bread", category="food", base_price=6.0, craftable=True, energy_restore=20.0
+    ),
     "shelf": CatalogueItem(
         name="shelf", category="material", base_price=10.0, craftable=True
     ),
@@ -58,6 +61,13 @@ RECIPES: dict[str, Recipe] = {
         name="soup",
         inputs={"potato": 2, "onion": 1},
         output="soup",
+        output_quantity=1,
+        ticks=2,
+    ),
+    "bread": Recipe(
+        name="bread",
+        inputs={"potato": 3},
+        output="bread",
         output_quantity=1,
         ticks=2,
     ),

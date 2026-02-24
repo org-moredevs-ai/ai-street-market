@@ -28,6 +28,7 @@ class GovernorState:
     _active_crafts: dict[str, ActiveCraft] = field(default_factory=dict)
     _known_agents: set[str] = field(default_factory=set)
     _agent_energy: dict[str, float] = field(default_factory=dict)
+    _bankrupt_agents: set[str] = field(default_factory=set)
 
     def advance_tick(self, tick: int) -> None:
         """Move to a new tick and reset per-tick counters."""
@@ -98,3 +99,13 @@ class GovernorState:
     def get_energy(self, agent_id: str) -> float:
         """Get an agent's energy from the last snapshot. Returns 0 if unknown."""
         return self._agent_energy.get(agent_id, 0.0)
+
+    # --- Bankruptcy ---
+
+    def mark_bankrupt(self, agent_id: str) -> None:
+        """Mark an agent as bankrupt (blocks all actions)."""
+        self._bankrupt_agents.add(agent_id)
+
+    def is_bankrupt(self, agent_id: str) -> bool:
+        """Check if an agent has been declared bankrupt."""
+        return agent_id in self._bankrupt_agents

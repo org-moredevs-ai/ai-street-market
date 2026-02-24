@@ -3,16 +3,20 @@
 import logging
 
 from streetmarket import (
+    Bankruptcy,
     ConsumeResult,
     Envelope,
     MarketBusClient,
     MessageType,
+    RentDue,
     Settlement,
     Topics,
     create_message,
 )
 
 from services.banker.rules import (
+    RentResultData,
+    check_all_bankruptcies,
     process_accept,
     process_bid,
     process_consume,
@@ -21,6 +25,7 @@ from services.banker.rules import (
     process_gather_result,
     process_join,
     process_offer,
+    process_rent,
 )
 from services.banker.state import BankerState, TradeResult
 
@@ -196,7 +201,7 @@ class BankerAgent:
             )
 
     async def _on_tick(self, envelope: Envelope) -> None:
-        """Handle a system tick — advance state, purge expired orders."""
+        """Handle a system tick — advance state, purge expired orders, rent, bankruptcy."""
         if envelope.type != MessageType.TICK:
             return
         tick_number = envelope.payload.get("tick_number", 0)
@@ -204,6 +209,28 @@ class BankerAgent:
         expired = self._state.purge_expired_orders()
         if expired:
             logger.info("Purged %d expired orders at tick %d", len(expired), tick_number)
+
+        # Process rent for all agents
+        for agent_id in self._state.get_all_agent_ids():
+            if self._state.is_bankrupt(agent_id):
+                continue
+            rent_result = process_rent(agent_id, self._state)
+            await self._publish_rent_due(rent_result)
+            if rent_result.amount > 0:
+                logger.info(
+                    "[tick %d] Rent: %s paid %.2f (wallet: %.2f)",
+                    tick_number,
+                    agent_id,
+                    rent_result.amount,
+                    rent_result.wallet_after,
+                )
+
+        # Check bankruptcies after rent
+        newly_bankrupt = check_all_bankruptcies(self._state)
+        for agent_id in newly_bankrupt:
+            await self._publish_bankruptcy(agent_id)
+            logger.warning("[tick %d] BANKRUPTCY: %s declared bankrupt", tick_number, agent_id)
+
         logger.info("Banker advanced to tick %d", tick_number)
 
     async def _publish_settlement(self, result: TradeResult) -> None:
@@ -249,6 +276,38 @@ class BankerAgent:
                 success=success,
                 energy_restored=energy_restored,
                 reason=reason,
+            ),
+            tick=self._state.current_tick,
+        )
+        await self._bus.publish(Topics.BANK, msg)
+
+    async def _publish_rent_due(self, rent_data: RentResultData) -> None:
+        """Publish a RentDue message to the bank topic."""
+        msg = create_message(
+            from_agent=self.AGENT_ID,
+            topic=Topics.BANK,
+            msg_type=MessageType.RENT_DUE,
+            payload=RentDue(
+                agent_id=rent_data.agent_id,
+                amount=rent_data.amount,
+                wallet_after=rent_data.wallet_after,
+                exempt=rent_data.exempt,
+                reason=rent_data.reason,
+            ),
+            tick=self._state.current_tick,
+        )
+        await self._bus.publish(Topics.BANK, msg)
+
+    async def _publish_bankruptcy(self, agent_id: str) -> None:
+        """Publish a Bankruptcy message to the bank topic."""
+        msg = create_message(
+            from_agent=self.AGENT_ID,
+            topic=Topics.BANK,
+            msg_type=MessageType.BANKRUPTCY,
+            payload=Bankruptcy(
+                agent_id=agent_id,
+                reason=f"Zero wallet for {self._state._zero_wallet_since.get(agent_id, '?')} "
+                       f"ticks — declared bankrupt at tick {self._state.current_tick}",
             ),
             tick=self._state.current_tick,
         )

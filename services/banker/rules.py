@@ -9,6 +9,7 @@ import logging
 from dataclasses import dataclass, field
 
 from streetmarket import ITEMS, Envelope, MessageType
+from streetmarket.models.rent import RENT_PER_TICK
 
 from services.banker.state import STARTING_WALLET, BankerState, OrderEntry, TradeResult
 
@@ -37,6 +38,7 @@ def process_join(envelope: Envelope, state: BankerState) -> list[str]:
     if not state.has_account(agent_id):
         state.create_account(agent_id, wallet=STARTING_WALLET)
         logger.info("Created account for '%s' with wallet %.2f", agent_id, STARTING_WALLET)
+    state.record_join_tick(agent_id)
     return []
 
 
@@ -176,6 +178,14 @@ def process_accept(envelope: Envelope, state: BankerState) -> TradeResult:
         )
         return result
 
+    # Storage check for buyer
+    if state.would_exceed_storage(buyer, trade_qty):
+        result.errors.append(
+            f"Buyer '{buyer}' would exceed storage limit "
+            f"({state.get_inventory_total(buyer)} + {trade_qty} > {state.get_storage_limit(buyer)})"
+        )
+        return result
+
     # All checks passed — execute the trade
     state.debit_wallet(buyer, total_price)
     state.credit_wallet(seller, total_price)
@@ -242,6 +252,14 @@ def process_gather_result(envelope: Envelope, state: BankerState) -> list[str]:
         state.create_account(agent_id, wallet=STARTING_WALLET)
         logger.info("Auto-created account for '%s' via gather", agent_id)
 
+    # Storage check
+    if state.would_exceed_storage(agent_id, quantity):
+        return [
+            f"Agent '{agent_id}' would exceed storage limit "
+            f"({state.get_inventory_total(agent_id)} + {quantity} > "
+            f"{state.get_storage_limit(agent_id)})"
+        ]
+
     state.credit_inventory(agent_id, item, quantity)
     return []
 
@@ -254,6 +272,16 @@ def process_craft_complete(envelope: Envelope, state: BankerState) -> list[str]:
 
     if not state.has_account(agent_id):
         errors.append(f"No account for agent '{agent_id}'")
+        return errors
+
+    # Storage check for total output
+    total_output = sum(outputs.values())
+    if state.would_exceed_storage(agent_id, total_output):
+        errors.append(
+            f"Agent '{agent_id}' would exceed storage limit "
+            f"({state.get_inventory_total(agent_id)} + {total_output} > "
+            f"{state.get_storage_limit(agent_id)})"
+        )
         return errors
 
     # Credit all outputs to inventory
@@ -304,3 +332,73 @@ def process_consume(envelope: Envelope, state: BankerState) -> ConsumeResultData
     result.energy_restored = cat_item.energy_restore * quantity
 
     return result
+
+
+@dataclass
+class RentResultData:
+    """Result of a single agent's rent processing."""
+
+    agent_id: str = ""
+    amount: float = 0.0
+    wallet_after: float = 0.0
+    exempt: bool = False
+    reason: str | None = None
+
+
+def process_rent(agent_id: str, state: BankerState) -> RentResultData:
+    """Process rent for a single agent. Pure function.
+
+    Returns RentResultData describing what happened.
+    """
+    result = RentResultData(agent_id=agent_id)
+    account = state.get_account(agent_id)
+    if account is None:
+        return result
+
+    # Grace period: no rent for first N ticks
+    if state.is_in_grace_period(agent_id):
+        result.exempt = True
+        result.reason = "In grace period"
+        result.wallet_after = account.wallet
+        return result
+
+    # House exemption
+    if state.has_house(agent_id):
+        result.exempt = True
+        result.reason = "Owns a house"
+        result.wallet_after = account.wallet
+        return result
+
+    # Deduct rent
+    rent = RENT_PER_TICK
+    if account.wallet >= rent:
+        state.debit_wallet(agent_id, rent)
+        result.amount = rent
+        result.wallet_after = account.wallet
+        # Wallet is now positive, clear zero-wallet tracking
+        if account.wallet > 0:
+            state.clear_zero_wallet(agent_id)
+        else:
+            state.record_zero_wallet(agent_id)
+    else:
+        # Can't afford full rent — take what's available
+        taken = account.wallet
+        state.debit_wallet(agent_id, taken)
+        result.amount = taken
+        result.wallet_after = 0.0
+        state.record_zero_wallet(agent_id)
+
+    return result
+
+
+def check_all_bankruptcies(state: BankerState) -> list[str]:
+    """Check all agents for bankruptcy. Returns list of newly bankrupt agent IDs."""
+    newly_bankrupt: list[str] = []
+    for agent_id in state.get_all_agent_ids():
+        if state.is_bankrupt(agent_id):
+            continue
+        if state.check_bankruptcy(agent_id):
+            state.declare_bankruptcy(agent_id)
+            newly_bankrupt.append(agent_id)
+            logger.info("Agent '%s' declared bankrupt", agent_id)
+    return newly_bankrupt

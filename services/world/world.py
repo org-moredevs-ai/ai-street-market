@@ -16,7 +16,9 @@ from streetmarket import (
     Topics,
     create_message,
 )
+from streetmarket.models.messages import NatureEvent as NatureEventPayload
 
+from services.world.nature import NatureBrain
 from services.world.rules import (
     apply_regen,
     check_gather_energy,
@@ -44,6 +46,7 @@ class WorldEngine:
     def __init__(self, nats_url: str = "nats://localhost:4222") -> None:
         self._bus = MarketBusClient(nats_url)
         self._state = WorldState()
+        self._nature = NatureBrain()
         self._tick_interval = float(
             os.environ.get("WORLD_TICK_INTERVAL", DEFAULT_TICK_INTERVAL)
         )
@@ -101,6 +104,23 @@ class WorldEngine:
 
     async def _do_tick(self) -> None:
         """Execute one tick: advance state, regen energy, publish Tick + Spawn + EnergyUpdate."""
+        # LLM nature: call if it's time
+        if self._nature.should_call_llm(self._state.current_tick + 1):
+            llm_spawns = await self._nature.call_llm(
+                self._state.current_tick + 1,
+                self._state.spawn_table,
+                self._state.get_all_energy(),
+            )
+            self._state._spawn_table = llm_spawns
+        elif self._nature.enabled:
+            # Use cached spawns (with event effects applied)
+            self._state._spawn_table = self._nature.get_spawn_table(
+                self._state.current_tick + 1, self._state.spawn_table
+            )
+
+        # Tick the active event (reduce remaining_ticks)
+        self._nature.tick_event()
+
         tick_number, spawn_id, items = process_tick(self._state)
 
         # Apply energy regen before publishing
@@ -125,6 +145,31 @@ class WorldEngine:
             tick=tick_number,
         )
         await self._bus.publish(Topics.NATURE, spawn_msg)
+
+        # Publish NatureEvent if active
+        if self._nature.active_event:
+            evt = self._nature.active_event
+            nature_msg = create_message(
+                from_agent=self.AGENT_ID,
+                topic=Topics.NATURE,
+                msg_type=MessageType.NATURE_EVENT,
+                payload=NatureEventPayload(
+                    event_id=evt.event_id,
+                    title=evt.title,
+                    description=evt.description,
+                    effects=evt.effects,
+                    duration_ticks=evt.duration_ticks,
+                    remaining_ticks=evt.remaining_ticks,
+                ),
+                tick=tick_number,
+            )
+            await self._bus.publish(Topics.NATURE, nature_msg)
+            logger.info(
+                "[tick %d] Nature event: %s (%d ticks remaining)",
+                tick_number,
+                evt.title,
+                evt.remaining_ticks,
+            )
 
         # Publish EnergyUpdate to /system/tick
         energy_levels = self._state.get_all_energy()
@@ -206,12 +251,15 @@ class WorldEngine:
         await self._bus.publish(Topics.NATURE, result_msg)
 
         if success:
+            item = envelope.payload.get("item", "")
+            self._state.record_gather(agent_id, item, granted)
+            self._nature.record_gather(agent_id, item, granted, self._state.current_tick)
             logger.info(
                 "[tick %d] GATHER from %s: %d %s granted (energy: %.1f)",
                 self._state.current_tick,
                 agent_id,
                 granted,
-                envelope.payload.get("item", ""),
+                item,
                 self._state.get_energy(agent_id),
             )
         else:
