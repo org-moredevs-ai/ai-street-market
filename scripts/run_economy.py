@@ -71,6 +71,14 @@ SERVICES: list[ServiceDefinition] = [
         phase=2,
         critical=True,
     ),
+    ServiceDefinition(
+        name="town_crier",
+        label="town_crier",
+        command=[sys.executable, "-m", "services.town_crier"],
+        color="\033[95m",  # bright magenta
+        phase=2,
+        critical=False,
+    ),
     # Phase 3: Trading agents
     ServiceDefinition(
         name="farmer",

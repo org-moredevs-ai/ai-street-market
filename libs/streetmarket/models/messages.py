@@ -28,6 +28,17 @@ class MessageType(StrEnum):
     RENT_DUE = "rent_due"
     BANKRUPTCY = "bankruptcy"
     NATURE_EVENT = "nature_event"
+    NARRATION = "narration"
+
+
+class MarketWeather(StrEnum):
+    """Overall market health indicator, computed deterministically."""
+
+    BOOMING = "booming"
+    STABLE = "stable"
+    STRESSED = "stressed"
+    CRISIS = "crisis"
+    CHAOTIC = "chaotic"
 
 
 class Offer(BaseModel):
@@ -207,6 +218,18 @@ class NatureEvent(BaseModel):
     remaining_ticks: int = Field(gt=0)
 
 
+class Narration(BaseModel):
+    """Town Crier periodic narrative summary of market activity."""
+
+    headline: str = Field(max_length=100)
+    body: str = Field(max_length=500)
+    weather: MarketWeather
+    predictions: str | None = Field(default=None, max_length=200)
+    drama_level: int = Field(ge=1, le=5)
+    window_start_tick: int = Field(ge=0)
+    window_end_tick: int = Field(ge=0)
+
+
 # Registry mapping message types to their payload models
 PAYLOAD_REGISTRY: dict[MessageType, type[BaseModel]] = {
     MessageType.OFFER: Offer,
@@ -229,4 +252,5 @@ PAYLOAD_REGISTRY: dict[MessageType, type[BaseModel]] = {
     MessageType.RENT_DUE: RentDue,
     MessageType.BANKRUPTCY: Bankruptcy,
     MessageType.NATURE_EVENT: NatureEvent,
+    MessageType.NARRATION: Narration,
 }

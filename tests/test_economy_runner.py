@@ -52,8 +52,8 @@ class TestServiceDefinitions:
                 assert svc.phase == 3, f"{svc.name} should be phase 3"
 
     def test_expected_service_count(self) -> None:
-        # 3 core services + 6 agents = 9
-        assert len(SERVICES) == 9
+        # 3 core services + 1 town_crier + 6 agents = 10
+        assert len(SERVICES) == 10
 
     def test_service_definition_is_frozen(self) -> None:
         svc = SERVICES[0]
@@ -93,16 +93,23 @@ class TestPhases:
     def test_phase_2_has_core_services(self) -> None:
         phase2 = get_services_for_phase(2)
         names = {s.name for s in phase2}
-        assert names == {"world", "governor", "banker"}
+        assert names == {"world", "governor", "banker", "town_crier"}
 
     def test_phase_3_has_agents(self) -> None:
         phase3 = get_services_for_phase(3)
         names = {s.name for s in phase3}
         assert names == {"farmer", "chef", "lumberjack", "mason", "baker", "builder"}
 
-    def test_all_phase_2_are_critical(self) -> None:
+    def test_core_phase_2_are_critical(self) -> None:
+        core = {"world", "governor", "banker"}
         for svc in get_services_for_phase(2):
-            assert svc.critical is True
+            if svc.name in core:
+                assert svc.critical is True, f"{svc.name} should be critical"
+
+    def test_town_crier_is_not_critical(self) -> None:
+        tc = next(s for s in SERVICES if s.name == "town_crier")
+        assert tc.critical is False
+        assert tc.phase == 2
 
     def test_no_phase_3_is_critical(self) -> None:
         for svc in get_services_for_phase(3):

@@ -1,4 +1,4 @@
-.PHONY: setup infra-up infra-down test lint proof-of-life governor banker world farmer chef lumberjack mason baker builder run-economy
+.PHONY: setup infra-up infra-down test lint proof-of-life governor banker world town-crier farmer chef lumberjack mason baker builder run-economy
 
 setup:
 	python3 -m venv .venv
@@ -29,6 +29,9 @@ banker:
 
 world:
 	.venv/bin/python -m services.world
+
+town-crier:
+	.venv/bin/python -m services.town_crier
 
 farmer:
 	.venv/bin/python -m agents.farmer
