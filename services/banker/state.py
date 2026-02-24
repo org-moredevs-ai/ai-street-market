@@ -154,12 +154,20 @@ class BankerState:
             if order.quantity <= 0:
                 del self._orders[msg_id]
 
-    def purge_expired_orders(self) -> list[OrderEntry]:
-        """Remove all orders whose expires_tick <= current_tick. Returns removed orders."""
+    def purge_expired_orders(self, max_age_ticks: int = 20) -> list[OrderEntry]:
+        """Remove expired and stale orders. Returns removed orders.
+
+        Removes orders that either:
+        - Have an explicit expires_tick <= current_tick, or
+        - Are older than max_age_ticks (prevents unbounded growth)
+        """
         expired: list[OrderEntry] = []
         to_remove: list[str] = []
         for msg_id, order in self._orders.items():
             if order.expires_tick is not None and order.expires_tick <= self.current_tick:
+                expired.append(order)
+                to_remove.append(msg_id)
+            elif (self.current_tick - order.tick) > max_age_ticks:
                 expired.append(order)
                 to_remove.append(msg_id)
         for msg_id in to_remove:
@@ -230,6 +238,10 @@ class BankerState:
     def clear_zero_wallet(self, agent_id: str) -> None:
         """Clear zero-wallet tracking (agent got money back)."""
         self._zero_wallet_since.pop(agent_id, None)
+
+    def get_zero_wallet_since(self, agent_id: str) -> int:
+        """Get the tick when an agent's wallet first hit zero, or 0 if not tracked."""
+        return self._zero_wallet_since.get(agent_id, 0)
 
     def check_bankruptcy(self, agent_id: str) -> bool:
         """Check if an agent should be declared bankrupt.

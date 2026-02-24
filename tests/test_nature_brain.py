@@ -297,12 +297,9 @@ class TestCallLLM:
 
         mock_client = MagicMock()
         mock_client.messages.create = AsyncMock(side_effect=RuntimeError("API error"))
+        brain._client = mock_client
 
-        mock_anthropic = MagicMock()
-        mock_anthropic.AsyncAnthropic.return_value = mock_client
-
-        with patch.dict("sys.modules", {"anthropic": mock_anthropic}):
-            result = await brain.call_llm(1, DEFAULT_SPAWN_TABLE, {})
+        result = await brain.call_llm(1, DEFAULT_SPAWN_TABLE, {})
         assert result == DEFAULT_SPAWN_TABLE
 
     async def test_successful_llm_call(self) -> None:
@@ -322,12 +319,9 @@ class TestCallLLM:
 
         mock_client = MagicMock()
         mock_client.messages.create = AsyncMock(return_value=mock_response)
+        brain._client = mock_client
 
-        mock_anthropic = MagicMock()
-        mock_anthropic.AsyncAnthropic.return_value = mock_client
-
-        with patch.dict("sys.modules", {"anthropic": mock_anthropic}):
-            result = await brain.call_llm(5, DEFAULT_SPAWN_TABLE, {"farmer": 80.0})
+        result = await brain.call_llm(5, DEFAULT_SPAWN_TABLE, {"farmer": 80.0})
 
         assert result["potato"] == 30
         assert result["onion"] == 20
@@ -344,12 +338,9 @@ class TestCallLLM:
 
         mock_client = MagicMock()
         mock_client.messages.create = AsyncMock(return_value=mock_response)
+        brain._client = mock_client
 
-        mock_anthropic = MagicMock()
-        mock_anthropic.AsyncAnthropic.return_value = mock_client
-
-        with patch.dict("sys.modules", {"anthropic": mock_anthropic}):
-            result = await brain.call_llm(5, DEFAULT_SPAWN_TABLE, {})
+        result = await brain.call_llm(5, DEFAULT_SPAWN_TABLE, {})
 
         assert result == DEFAULT_SPAWN_TABLE
 
@@ -369,12 +360,9 @@ class TestCallLLM:
 
         mock_client = MagicMock()
         mock_client.messages.create = AsyncMock(return_value=mock_response)
+        brain._client = mock_client
 
-        mock_anthropic = MagicMock()
-        mock_anthropic.AsyncAnthropic.return_value = mock_client
-
-        with patch.dict("sys.modules", {"anthropic": mock_anthropic}):
-            await brain.call_llm(10, DEFAULT_SPAWN_TABLE, {})
+        await brain.call_llm(10, DEFAULT_SPAWN_TABLE, {})
 
         assert brain._last_call_tick == 10
 

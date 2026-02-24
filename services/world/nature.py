@@ -78,18 +78,20 @@ class NatureBrain:
     _active_event: NatureEvent | None = None
     _last_call_tick: int = 0
     _gather_history: list[dict] = field(default_factory=list)
+    _client: object | None = None  # anthropic.AsyncAnthropic, typed as object to avoid import
 
     def __post_init__(self) -> None:
         self.enabled = os.environ.get("WORLD_USE_LLM_NATURE", "false").lower() == "true"
         if self.enabled:
             try:
-                import anthropic  # noqa: F401
+                import anthropic
 
                 api_key = os.environ.get("ANTHROPIC_API_KEY", "")
                 if not api_key:
                     logger.warning("WORLD_USE_LLM_NATURE=true but no ANTHROPIC_API_KEY — disabling")
                     self.enabled = False
                 else:
+                    self._client = anthropic.AsyncAnthropic()
                     logger.info(
                         "NatureBrain enabled — will call LLM every %d ticks",
                         LLM_CALL_INTERVAL,
@@ -168,9 +170,10 @@ class NatureBrain:
         self._last_call_tick = current_tick
 
         try:
-            import anthropic
-
-            client = anthropic.AsyncAnthropic()
+            client = self._client
+            if client is None:
+                logger.warning("NatureBrain client not initialized — using defaults")
+                return dict(default_table)
 
             # Build context for the LLM
             gather_summary = self._summarize_gathers()

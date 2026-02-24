@@ -173,6 +173,7 @@ class TradingAgent(ABC):
             payload = GatherResult.model_validate(envelope.payload)
             if payload.agent_id == self.AGENT_ID and payload.success:
                 self._state.add_inventory(payload.item, payload.quantity)
+                self._update_storage_limit()
                 logger.info(
                     "[tick %d] %s: gathered %d %s",
                     self._state.current_tick,
@@ -216,6 +217,7 @@ class TradingAgent(ABC):
             if payload.buyer == self.AGENT_ID:
                 self._state.wallet -= payload.total_price
                 self._state.add_inventory(payload.item, payload.quantity)
+                self._update_storage_limit()
                 # Remove the pending offer that was settled
                 self._state.pending_offers.pop(payload.reference_msg_id, None)
                 logger.info(
@@ -229,6 +231,7 @@ class TradingAgent(ABC):
             elif payload.seller == self.AGENT_ID:
                 self._state.wallet += payload.total_price
                 self._state.remove_inventory(payload.item, payload.quantity)
+                self._update_storage_limit()
                 self._state.pending_offers.pop(payload.reference_msg_id, None)
                 logger.info(
                     "[tick %d] %s: sold %d %s for %.2f",
@@ -428,6 +431,7 @@ class TradingAgent(ABC):
                 started_tick=tick,
                 duration_ticks=recipe.ticks,
             )
+            self._update_storage_limit()
             self._state.actions_this_tick += 1
 
         elif action.kind == ActionKind.CRAFT_COMPLETE:
@@ -448,6 +452,7 @@ class TradingAgent(ABC):
             await self._client.publish(topic, msg)
             self._state.add_inventory(recipe.output, recipe.output_quantity)
             self._state.active_craft = None
+            self._update_storage_limit()
             self._state.actions_this_tick += 1
 
         elif action.kind == ActionKind.CONSUME:

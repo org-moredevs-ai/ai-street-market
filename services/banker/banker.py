@@ -215,7 +215,9 @@ class BankerAgent:
             if self._state.is_bankrupt(agent_id):
                 continue
             rent_result = process_rent(agent_id, self._state)
-            await self._publish_rent_due(rent_result)
+            # Only publish RENT_DUE when rent was actually charged
+            if rent_result.amount > 0 or not rent_result.exempt:
+                await self._publish_rent_due(rent_result)
             if rent_result.amount > 0:
                 logger.info(
                     "[tick %d] Rent: %s paid %.2f (wallet: %.2f)",
@@ -298,6 +300,15 @@ class BankerAgent:
         )
         await self._bus.publish(Topics.BANK, msg)
 
+    def _bankruptcy_reason(self, agent_id: str) -> str:
+        """Build a human-readable bankruptcy reason string."""
+        zero_since = self._state.get_zero_wallet_since(agent_id)
+        duration = self._state.current_tick - zero_since
+        return (
+            f"Zero wallet since tick {zero_since} ({duration} ticks) "
+            f"— declared bankrupt at tick {self._state.current_tick}"
+        )
+
     async def _publish_bankruptcy(self, agent_id: str) -> None:
         """Publish a Bankruptcy message to the bank topic."""
         msg = create_message(
@@ -306,8 +317,7 @@ class BankerAgent:
             msg_type=MessageType.BANKRUPTCY,
             payload=Bankruptcy(
                 agent_id=agent_id,
-                reason=f"Zero wallet for {self._state._zero_wallet_since.get(agent_id, '?')} "
-                       f"ticks — declared bankrupt at tick {self._state.current_tick}",
+                reason=self._bankruptcy_reason(agent_id),
             ),
             tick=self._state.current_tick,
         )
