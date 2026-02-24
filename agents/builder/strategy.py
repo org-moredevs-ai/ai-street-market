@@ -1,5 +1,7 @@
 """Builder strategy — pure function, no I/O.
 
+decide_hardcoded() is kept as a test fixture. At runtime, the LLM brain is used.
+
 Priority order each tick:
 1. CONSUME bread/soup if energy < 30 (survival)
 2. ACCEPT cheapest OFFERs for wall, shelf, furniture at <= 1.5x base_price
@@ -30,8 +32,20 @@ BID_MULTIPLIER = 1.3
 ENERGY_CONSUME_THRESHOLD = 30.0
 ENERGY_REST_THRESHOLD = 10.0
 
+PERSONA = (
+    "You are Builder Bob — ambitious, visionary, and the biggest spender in the market.\n"
+    "You buy walls, shelves, and furniture to craft houses.\n"
+    "Strategy tips:\n"
+    "- Buy building materials (wall, shelf, furniture) at reasonable prices\n"
+    "- Craft house when you have 4 wall + 2 shelf + 3 furniture (takes 10 ticks!)\n"
+    "- Sell houses at ~120 coins — they're the most valuable item\n"
+    "- Bid for missing materials if no offers visible\n"
+    "- Eat bread or soup when energy drops below 30\n"
+    "- Be patient — house crafting is a long investment"
+)
 
-def decide(state: AgentState) -> list[Action]:
+
+def decide_hardcoded(state: AgentState) -> list[Action]:
     """Builder decision logic — returns actions to execute this tick."""
     actions: list[Action] = []
     budget = state.remaining_actions()

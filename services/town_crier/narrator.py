@@ -1,57 +1,26 @@
 """Narrator — LLM-powered narrative generation for the Town Crier.
 
-Calls Claude Haiku to generate dramatic market narrations using tool_use
-for structured output. Falls back to deterministic bullet-point summaries
-on any error or when LLM is disabled.
-
-Follows the same pattern as services/world/nature.py.
+Uses LangChain/OpenRouter for structured narration output.
+LLM is always on — there is no toggle. Falls back to deterministic
+summaries only on runtime errors (not by configuration).
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
-import os
 from dataclasses import dataclass
+from typing import Any
 
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field
+from streetmarket.agent.llm_config import LLMConfig
 from streetmarket.models.messages import MarketWeather
 
 logger = logging.getLogger(__name__)
 
-# Tool definition for structured output
-NARRATION_TOOL = {
-    "name": "publish_narration",
-    "description": (
-        "Publish a narrative summary of recent market activity. "
-        "You are a medieval town announcer meets Wall Street commentator."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "headline": {
-                "type": "string",
-                "maxLength": 100,
-                "description": "Punchy one-liner summarizing the market mood",
-            },
-            "body": {
-                "type": "string",
-                "maxLength": 500,
-                "description": "2-4 paragraph dramatic narration of events",
-            },
-            "predictions": {
-                "type": "string",
-                "maxLength": 200,
-                "description": "Optional market predictions (can be wrong!)",
-            },
-            "drama_level": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 5,
-                "description": "1=quiet day, 3=interesting, 5=explosive",
-            },
-        },
-        "required": ["headline", "body", "drama_level"],
-    },
-}
+LLM_TIMEOUT = 15.0
 
 SYSTEM_PROMPT = (
     "You are the Town Crier of the AI Street Market — a medieval town announcer "
@@ -68,6 +37,25 @@ SYSTEM_PROMPT = (
 )
 
 
+class NarrationSchema(BaseModel):
+    """Structured output schema for narration generation."""
+
+    headline: str = Field(
+        description="Punchy one-liner summarizing the market mood",
+        max_length=100,
+    )
+    body: str = Field(description="2-4 paragraph dramatic narration of events", max_length=500)
+    predictions: str | None = Field(
+        default=None,
+        description="Optional market predictions (can be wrong!)",
+    )
+    drama_level: int = Field(
+        description="1=quiet day, 3=interesting, 5=explosive",
+        ge=1,
+        le=5,
+    )
+
+
 @dataclass
 class NarrationResult:
     """The output of a narration generation."""
@@ -82,77 +70,60 @@ class NarrationResult:
 class Narrator:
     """LLM-powered narrator for market events.
 
-    When enabled, calls Claude Haiku with tool_use for structured output.
-    Falls back to deterministic summaries on any error.
+    Always uses LLM via OpenRouter. Falls back to deterministic
+    summaries only on runtime errors.
     """
 
-    enabled: bool = False
-    _client: object | None = None  # anthropic.AsyncAnthropic
-
-    def __post_init__(self) -> None:
-        self.enabled = os.environ.get("TOWN_CRIER_USE_LLM", "false").lower() == "true"
-        if self.enabled:
-            try:
-                import anthropic
-
-                api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-                if not api_key:
-                    logger.warning("TOWN_CRIER_USE_LLM=true but no ANTHROPIC_API_KEY — disabling")
-                    self.enabled = False
-                else:
-                    self._client = anthropic.AsyncAnthropic()
-                    logger.info("Narrator LLM enabled — will generate narrative summaries")
-            except ImportError:
-                logger.warning("anthropic package not installed — disabling Narrator LLM")
-                self.enabled = False
-
     async def generate_narration(
-        self, summary: dict, weather: MarketWeather
+        self, summary: dict[str, Any], weather: MarketWeather
     ) -> NarrationResult:
         """Generate a narration from the window summary.
 
-        Tries LLM first (if enabled), falls back to deterministic.
+        Tries LLM first, falls back to deterministic on error.
         """
-        if self.enabled:
-            try:
-                return await self._call_llm(summary, weather)
-            except Exception as e:
-                logger.warning("Narrator LLM call failed: %s — using fallback", e)
-
-        return self._fallback_narration(summary, weather)
+        try:
+            return await self._call_llm(summary, weather)
+        except Exception as e:
+            logger.warning("Narrator LLM call failed: %s — using fallback", e)
+            return self._fallback_narration(summary, weather)
 
     async def _call_llm(
-        self, summary: dict, weather: MarketWeather
+        self, summary: dict[str, Any], weather: MarketWeather
     ) -> NarrationResult:
-        """Call Claude Haiku for a narrative summary."""
-        client = self._client
-        if client is None:
-            raise RuntimeError("Narrator client not initialized")
-
+        """Call LLM via OpenRouter for a narrative summary."""
+        config = LLMConfig.for_service("town_crier")
+        llm = ChatOpenAI(
+            model=config.model,
+            api_key=config.api_key,  # type: ignore[arg-type]
+            base_url=config.api_base,
+            max_tokens=config.max_tokens,  # type: ignore[call-arg]
+            temperature=config.temperature,
+        )
+        structured = llm.with_structured_output(NarrationSchema)
         prompt = self._build_prompt(summary, weather)
 
-        response = await client.messages.create(  # type: ignore[union-attr]
-            model="claude-haiku-4-5-20251001",
-            max_tokens=800,
-            system=SYSTEM_PROMPT,
-            tools=[NARRATION_TOOL],  # type: ignore[list-item]
-            messages=[{"role": "user", "content": prompt}],
+        result: NarrationSchema = await asyncio.wait_for(
+            structured.ainvoke([  # type: ignore[arg-type]
+                SystemMessage(content=SYSTEM_PROMPT),
+                HumanMessage(content=prompt),
+            ]),
+            timeout=LLM_TIMEOUT,
         )
 
-        for block in response.content:
-            if block.type == "tool_use" and block.name == "publish_narration":
-                return self._parse_tool_response(block.input)
+        return NarrationResult(
+            headline=result.headline[:100],
+            body=result.body[:500],
+            predictions=result.predictions[:200] if result.predictions else None,
+            drama_level=max(1, min(5, result.drama_level)),
+        )
 
-        raise ValueError("LLM response had no publish_narration tool_use")
-
-    def _build_prompt(self, summary: dict, weather: MarketWeather) -> str:
+    def _build_prompt(self, summary: dict[str, Any], weather: MarketWeather) -> str:
         """Build the LLM prompt from window summary data."""
         parts = [
             f"Market weather: {weather.value.upper()}",
             f"Ticks {summary['window_start_tick']} to {summary['window_end_tick']}",
         ]
 
-        # Settlements
         settlements = summary.get("settlements", [])
         if settlements:
             trade_lines = []
@@ -166,22 +137,18 @@ class Narrator:
         else:
             parts.append("No trades this window.")
 
-        # Crafts
         crafts = summary.get("crafts", [])
         if crafts:
             craft_lines = [f"  {c['agent_id']} crafted {c['output']}" for c in crafts]
             parts.append("Crafting:\n" + "\n".join(craft_lines))
 
-        # Bankruptcies
         bankruptcies = summary.get("bankruptcies", [])
         if bankruptcies:
             parts.append(f"BANKRUPTCIES: {', '.join(bankruptcies)}")
 
-        # Nature events
         for event in summary.get("nature_events", []):
             parts.append(f"Nature event: {event['title']} — {event['description']}")
 
-        # Energy
         energy = summary.get("energy_levels", {})
         if energy:
             energy_str = ", ".join(
@@ -189,12 +156,10 @@ class Narrator:
             )
             parts.append(f"Energy levels: {energy_str}")
 
-        # Joins
         joins = summary.get("joins", [])
         if joins:
             parts.append(f"New arrivals: {', '.join(joins)}")
 
-        # All-time stats
         parts.append(
             f"All-time: {summary.get('total_settlements', 0)} trades, "
             f"{summary.get('total_coins_traded', 0):.0f} coins exchanged, "
@@ -203,24 +168,8 @@ class Narrator:
 
         return "\n\n".join(parts)
 
-    def _parse_tool_response(self, tool_input: dict) -> NarrationResult:
-        """Parse the LLM's tool_use response into a NarrationResult."""
-        headline = str(tool_input.get("headline", "Market Update"))[:100]
-        body = str(tool_input.get("body", ""))[:500]
-        predictions = tool_input.get("predictions")
-        if predictions:
-            predictions = str(predictions)[:200]
-        drama_level = max(1, min(5, int(tool_input.get("drama_level", 3))))
-
-        return NarrationResult(
-            headline=headline,
-            body=body,
-            predictions=predictions,
-            drama_level=drama_level,
-        )
-
     def _fallback_narration(
-        self, summary: dict, weather: MarketWeather
+        self, summary: dict[str, Any], weather: MarketWeather
     ) -> NarrationResult:
         """Generate a deterministic bullet-point summary."""
         lines: list[str] = []
@@ -230,7 +179,6 @@ class Narrator:
         joins = summary.get("joins", [])
         nature_events = summary.get("nature_events", [])
 
-        # Headline
         if bankruptcies:
             headline = f"Crisis! {', '.join(bankruptcies)} declared bankrupt"
         elif len(settlements) >= 3:
@@ -242,7 +190,6 @@ class Narrator:
         else:
             headline = "Market report"
 
-        # Body
         tick_range = (
             f"Ticks {summary['window_start_tick']}-{summary['window_end_tick']}"
         )
@@ -271,7 +218,6 @@ class Narrator:
 
         body = "\n".join(lines)[:500]
 
-        # Drama level from weather
         drama_map = {
             MarketWeather.STABLE: 1,
             MarketWeather.BOOMING: 3,

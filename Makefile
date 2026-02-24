@@ -1,4 +1,4 @@
-.PHONY: setup infra-up infra-down test lint proof-of-life governor banker world town-crier ws-bridge farmer chef lumberjack mason baker builder run-economy
+.PHONY: setup infra-up infra-down test lint proof-of-life governor banker world town-crier ws-bridge farmer chef lumberjack mason baker builder run-economy smoke-test
 
 setup:
 	python3 -m venv .venv
@@ -56,3 +56,6 @@ builder:
 
 run-economy:
 	.venv/bin/python scripts/run_economy.py
+
+smoke-test:
+	.venv/bin/pytest tests/test_economy_smoke.py -v -m integration

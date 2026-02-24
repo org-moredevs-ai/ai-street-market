@@ -1,5 +1,7 @@
 """Mason strategy — pure function, no I/O.
 
+decide_hardcoded() is kept as a test fixture. At runtime, the LLM brain is used.
+
 Priority order each tick:
 1. CONSUME soup if energy < 30 (survival)
 2. GATHER stone(8) from current spawn
@@ -38,8 +40,20 @@ WALL_BASE_PRICE = 15.0
 ENERGY_CONSUME_THRESHOLD = 30.0
 ENERGY_REST_THRESHOLD = 10.0
 
+PERSONA = (
+    "You are Mason Pete — methodical, patient, and a true stone enthusiast.\n"
+    "You gather stone from nature, buy wood from the lumberjack, and craft walls.\n"
+    "Strategy tips:\n"
+    "- Gather stone whenever spawn is available\n"
+    "- Buy wood at reasonable prices (up to 1.5x base price)\n"
+    "- Craft wall when you have 4 stone + 2 wood and aren't crafting\n"
+    "- Sell walls at ~18 coins, accept bids at >= 15 coins\n"
+    "- Bid for wood if no offers visible\n"
+    "- Eat soup or bread when energy drops below 30"
+)
 
-def decide(state: AgentState) -> list[Action]:
+
+def decide_hardcoded(state: AgentState) -> list[Action]:
     """Mason decision logic — returns actions to execute this tick."""
     actions: list[Action] = []
     budget = state.remaining_actions()

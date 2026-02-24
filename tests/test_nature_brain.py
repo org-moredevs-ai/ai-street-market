@@ -1,45 +1,16 @@
-"""Tests for NatureBrain — LLM Nature Intelligence (all mocked, no API key needed)."""
+"""Tests for NatureBrain — LLM Nature Intelligence via LangChain/OpenRouter (all mocked)."""
 
+import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from services.world.nature import LLM_CALL_INTERVAL, NatureBrain, NatureEvent
+from services.world.nature import (
+    LLM_CALL_INTERVAL,
+    NatureBrain,
+    NatureEvent,
+    NatureEventSchema,
+    NatureOutputSchema,
+)
 from services.world.state import DEFAULT_SPAWN_TABLE
-
-# ── Construction ────────────────────────────────────────────────────────────
-
-
-class TestNatureBrainConstruction:
-    @patch.dict("os.environ", {"WORLD_USE_LLM_NATURE": "false"}, clear=False)
-    def test_disabled_by_default(self) -> None:
-        brain = NatureBrain.__new__(NatureBrain)
-        brain.enabled = False
-        brain._cached_spawns = None
-        brain._active_event = None
-        brain._last_call_tick = 0
-        brain._gather_history = []
-        assert brain.enabled is False
-
-    @patch.dict(
-        "os.environ",
-        {"WORLD_USE_LLM_NATURE": "true", "ANTHROPIC_API_KEY": "test-key"},
-        clear=False,
-    )
-    def test_enabled_with_env_var_and_key(self) -> None:
-        brain = NatureBrain()
-        assert brain.enabled is True
-
-    @patch.dict("os.environ", {"WORLD_USE_LLM_NATURE": "true"}, clear=False)
-    def test_disabled_without_api_key(self) -> None:
-        # Remove API key if present
-        import os
-        old = os.environ.pop("ANTHROPIC_API_KEY", None)
-        try:
-            brain = NatureBrain()
-            assert brain.enabled is False
-        finally:
-            if old:
-                os.environ["ANTHROPIC_API_KEY"] = old
-
 
 # ── Gather history ──────────────────────────────────────────────────────────
 
@@ -77,32 +48,23 @@ class TestGatherHistory:
 
 
 class TestShouldCallLLM:
-    def test_disabled_never_calls(self) -> None:
+    def test_calls_at_interval(self) -> None:
         brain = NatureBrain()
-        brain.enabled = False
-        assert not brain.should_call_llm(100)
-
-    def test_enabled_calls_at_interval(self) -> None:
-        brain = NatureBrain()
-        brain.enabled = True
         brain._last_call_tick = 0
         assert brain.should_call_llm(LLM_CALL_INTERVAL)
 
-    def test_enabled_no_call_before_interval(self) -> None:
+    def test_no_call_before_interval(self) -> None:
         brain = NatureBrain()
-        brain.enabled = True
         brain._last_call_tick = 0
         assert not brain.should_call_llm(LLM_CALL_INTERVAL - 1)
 
     def test_calls_after_first_call(self) -> None:
         brain = NatureBrain()
-        brain.enabled = True
         brain._last_call_tick = 5
         assert brain.should_call_llm(5 + LLM_CALL_INTERVAL)
 
     def test_no_call_immediately_after_previous(self) -> None:
         brain = NatureBrain()
-        brain.enabled = True
         brain._last_call_tick = 5
         assert not brain.should_call_llm(6)
 
@@ -206,44 +168,45 @@ class TestTickEvent:
 class TestProcessLLMResponse:
     def test_basic_spawn_response(self) -> None:
         brain = NatureBrain()
-        result = brain._process_llm_response(
-            {"spawns": {"potato": 25, "onion": 10, "wood": 20, "nails": 8, "stone": 12}},
-            10,
+        result_schema = NatureOutputSchema(
+            spawns={"potato": 25, "onion": 10, "wood": 20, "nails": 8, "stone": 12},
+            event=None,
         )
+        result = brain._process_llm_response(result_schema, 10)
         assert result["potato"] == 25
         assert result["onion"] == 10
         assert brain._cached_spawns is not None
 
     def test_spawns_clamped_to_range(self) -> None:
         brain = NatureBrain()
-        result = brain._process_llm_response(
-            {"spawns": {"potato": 100, "onion": -5, "wood": 20, "nails": 8, "stone": 12}},
-            10,
+        result_schema = NatureOutputSchema(
+            spawns={"potato": 100, "onion": -5, "wood": 20, "nails": 8, "stone": 12},
+            event=None,
         )
+        result = brain._process_llm_response(result_schema, 10)
         assert result["potato"] == 50  # Clamped to max
         assert result["onion"] == 0  # Clamped to min
 
     def test_missing_spawn_defaults_to_zero(self) -> None:
         brain = NatureBrain()
-        result = brain._process_llm_response(
-            {"spawns": {"potato": 10}},  # Missing others
-            10,
+        result_schema = NatureOutputSchema(
+            spawns={"potato": 10},
+            event=None,
         )
+        result = brain._process_llm_response(result_schema, 10)
         assert result["onion"] == 0
 
     def test_event_created_from_response(self) -> None:
         brain = NatureBrain()
-        brain._process_llm_response(
-            {
-                "spawns": {"potato": 10, "onion": 15, "wood": 15, "nails": 10, "stone": 10},
-                "event": {
-                    "title": "Potato Blight",
-                    "description": "Potatoes are scarce",
-                    "duration_ticks": 5,
-                },
-            },
-            10,
+        result_schema = NatureOutputSchema(
+            spawns={"potato": 10, "onion": 15, "wood": 15, "nails": 10, "stone": 10},
+            event=NatureEventSchema(
+                title="Potato Blight",
+                description="Potatoes are scarce",
+                duration_ticks=5,
+            ),
         )
+        brain._process_llm_response(result_schema, 10)
         assert brain.active_event is not None
         assert brain.active_event.title == "Potato Blight"
         assert brain.active_event.duration_ticks == 5
@@ -251,19 +214,17 @@ class TestProcessLLMResponse:
 
     def test_event_duration_clamped(self) -> None:
         brain = NatureBrain()
-        brain._process_llm_response(
-            {
-                "spawns": {"potato": 10, "onion": 15, "wood": 15, "nails": 10, "stone": 10},
-                "event": {
-                    "title": "Forever Storm",
-                    "description": "Way too long",
-                    "duration_ticks": 100,
-                },
-            },
-            10,
+        result_schema = NatureOutputSchema(
+            spawns={"potato": 10, "onion": 15, "wood": 15, "nails": 10, "stone": 10},
+            event=NatureEventSchema(
+                title="Forever Storm",
+                description="Way too long",
+                duration_ticks=15,
+            ),
         )
+        brain._process_llm_response(result_schema, 10)
         assert brain.active_event is not None
-        assert brain.active_event.duration_ticks == 15  # Clamped
+        assert brain.active_event.duration_ticks == 15
 
     def test_event_not_replaced_if_active(self) -> None:
         brain = NatureBrain()
@@ -271,100 +232,73 @@ class TestProcessLLMResponse:
             event_id="existing", title="Old", description="",
             effects={}, duration_ticks=5, remaining_ticks=3,
         )
-        brain._process_llm_response(
-            {
-                "spawns": {"potato": 10, "onion": 15, "wood": 15, "nails": 10, "stone": 10},
-                "event": {"title": "New", "description": "", "duration_ticks": 5},
-            },
-            10,
+        result_schema = NatureOutputSchema(
+            spawns={"potato": 10, "onion": 15, "wood": 15, "nails": 10, "stone": 10},
+            event=NatureEventSchema(
+                title="New", description="", duration_ticks=5,
+            ),
         )
+        brain._process_llm_response(result_schema, 10)
         assert brain.active_event.title == "Old"  # Not replaced
 
 
-# ── Call LLM (mocked) ──────────────────────────────────────────────────────
+# ── Call LLM (mocked via LangChain) ─────────────────────────────────────────
 
 
 class TestCallLLM:
-    async def test_disabled_returns_default(self) -> None:
-        brain = NatureBrain()
-        brain.enabled = False
-        result = await brain.call_llm(1, DEFAULT_SPAWN_TABLE, {})
-        assert result == DEFAULT_SPAWN_TABLE
-
     async def test_llm_error_returns_default(self) -> None:
         brain = NatureBrain()
-        brain.enabled = True
+        mock_structured = AsyncMock(side_effect=RuntimeError("API error"))
+        mock_llm = MagicMock()
+        mock_llm.with_structured_output.return_value = MagicMock(ainvoke=mock_structured)
 
-        mock_client = MagicMock()
-        mock_client.messages.create = AsyncMock(side_effect=RuntimeError("API error"))
-        brain._client = mock_client
+        env = {"OPENROUTER_API_KEY": "test", "DEFAULT_MODEL": "test-model"}
+        with patch.dict(os.environ, env, clear=False):
+            with patch("services.world.nature.ChatOpenAI", return_value=mock_llm):
+                result = await brain.call_llm(1, DEFAULT_SPAWN_TABLE, {})
 
-        result = await brain.call_llm(1, DEFAULT_SPAWN_TABLE, {})
         assert result == DEFAULT_SPAWN_TABLE
 
     async def test_successful_llm_call(self) -> None:
         brain = NatureBrain()
-        brain.enabled = True
+        mock_result = NatureOutputSchema(
+            spawns={"potato": 30, "onion": 20, "wood": 10, "nails": 10, "stone": 10},
+            event=None,
+        )
+        mock_structured = AsyncMock(return_value=mock_result)
+        mock_llm = MagicMock()
+        mock_llm.with_structured_output.return_value = MagicMock(ainvoke=mock_structured)
 
-        # Mock the anthropic client
-        mock_block = MagicMock()
-        mock_block.type = "tool_use"
-        mock_block.name = "set_nature"
-        mock_block.input = {
-            "spawns": {"potato": 30, "onion": 20, "wood": 10, "nails": 10, "stone": 10},
-        }
-
-        mock_response = MagicMock()
-        mock_response.content = [mock_block]
-
-        mock_client = MagicMock()
-        mock_client.messages.create = AsyncMock(return_value=mock_response)
-        brain._client = mock_client
-
-        result = await brain.call_llm(5, DEFAULT_SPAWN_TABLE, {"farmer": 80.0})
+        env = {"OPENROUTER_API_KEY": "test", "DEFAULT_MODEL": "test-model"}
+        with patch.dict(os.environ, env, clear=False):
+            with patch("services.world.nature.ChatOpenAI", return_value=mock_llm):
+                result = await brain.call_llm(5, DEFAULT_SPAWN_TABLE, {"farmer": 80.0})
 
         assert result["potato"] == 30
         assert result["onion"] == 20
 
-    async def test_llm_no_tool_use_returns_default(self) -> None:
-        brain = NatureBrain()
-        brain.enabled = True
-
-        mock_block = MagicMock()
-        mock_block.type = "text"
-
-        mock_response = MagicMock()
-        mock_response.content = [mock_block]
-
-        mock_client = MagicMock()
-        mock_client.messages.create = AsyncMock(return_value=mock_response)
-        brain._client = mock_client
-
-        result = await brain.call_llm(5, DEFAULT_SPAWN_TABLE, {})
-
-        assert result == DEFAULT_SPAWN_TABLE
-
     async def test_llm_updates_last_call_tick(self) -> None:
         brain = NatureBrain()
-        brain.enabled = True
+        mock_result = NatureOutputSchema(
+            spawns={"potato": 20, "onion": 15, "wood": 15, "nails": 10, "stone": 10},
+            event=None,
+        )
+        mock_structured = AsyncMock(return_value=mock_result)
+        mock_llm = MagicMock()
+        mock_llm.with_structured_output.return_value = MagicMock(ainvoke=mock_structured)
 
-        mock_block = MagicMock()
-        mock_block.type = "tool_use"
-        mock_block.name = "set_nature"
-        mock_block.input = {
-            "spawns": {"potato": 20, "onion": 15, "wood": 15, "nails": 10, "stone": 10},
-        }
-
-        mock_response = MagicMock()
-        mock_response.content = [mock_block]
-
-        mock_client = MagicMock()
-        mock_client.messages.create = AsyncMock(return_value=mock_response)
-        brain._client = mock_client
-
-        await brain.call_llm(10, DEFAULT_SPAWN_TABLE, {})
+        env = {"OPENROUTER_API_KEY": "test", "DEFAULT_MODEL": "test-model"}
+        with patch.dict(os.environ, env, clear=False):
+            with patch("services.world.nature.ChatOpenAI", return_value=mock_llm):
+                await brain.call_llm(10, DEFAULT_SPAWN_TABLE, {})
 
         assert brain._last_call_tick == 10
+
+    async def test_no_api_key_returns_default(self) -> None:
+        brain = NatureBrain()
+        with patch.dict(os.environ, {}, clear=True):
+            result = await brain.call_llm(1, DEFAULT_SPAWN_TABLE, {})
+        assert result == DEFAULT_SPAWN_TABLE
 
 
 # ── Summarize gathers ──────────────────────────────────────────────────────

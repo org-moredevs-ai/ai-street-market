@@ -1,5 +1,7 @@
 """Baker strategy — pure function, no I/O.
 
+decide_hardcoded() is kept as a test fixture. At runtime, the LLM brain is used.
+
 Priority order each tick:
 1. CONSUME bread/soup if energy < 30 (eat own product first)
 2. ACCEPT cheapest OFFERs for potato at <= 1.5x base_price
@@ -29,8 +31,20 @@ BID_MULTIPLIER = 1.3
 ENERGY_CONSUME_THRESHOLD = 30.0
 ENERGY_REST_THRESHOLD = 10.0
 
+PERSONA = (
+    "You are Baker Bella — warm, economical, and fiercely competitive with the chef.\n"
+    "You buy potato, craft bread, and sell it on the food market.\n"
+    "Strategy tips:\n"
+    "- Buy potato at reasonable prices (up to 1.5x base price)\n"
+    "- Craft bread whenever you have 3 potato and aren't crafting\n"
+    "- Sell bread at ~8 coins — undercut the chef to win market share\n"
+    "- Keep 1 bread in reserve for emergency energy\n"
+    "- Bid for potato if no offers visible\n"
+    "- Eat bread first (your own product) when energy drops below 30"
+)
 
-def decide(state: AgentState) -> list[Action]:
+
+def decide_hardcoded(state: AgentState) -> list[Action]:
     """Baker decision logic — returns actions to execute this tick."""
     actions: list[Action] = []
     budget = state.remaining_actions()

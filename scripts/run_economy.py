@@ -361,6 +361,13 @@ class EconomyRunner:
 
 
 async def main() -> None:
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        print(
+            "\033[91mERROR: OPENROUTER_API_KEY is required — "
+            "this is the AI Street Market.\033[0m"
+        )
+        sys.exit(1)
+
     runner = EconomyRunner()
 
     loop = asyncio.get_running_loop()

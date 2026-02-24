@@ -145,6 +145,9 @@ class TestAgentState:
         state.advance_tick(10)
         assert state.current_tick == 10
         assert state.actions_this_tick == 0
+        # observed_offers persist across ticks — cleared after decide()
+        assert len(state.observed_offers) == 1
+        state.clear_observed_offers()
         assert state.observed_offers == []
 
 

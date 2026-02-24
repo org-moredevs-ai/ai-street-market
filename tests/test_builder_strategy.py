@@ -5,7 +5,9 @@ from streetmarket.agent.state import AgentState, CraftingJob, ObservedOffer
 
 from agents.builder.strategy import (
     HOUSE_SELL_PRICE,
-    decide,
+)
+from agents.builder.strategy import (
+    decide_hardcoded as decide,
 )
 
 

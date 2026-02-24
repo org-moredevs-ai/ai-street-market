@@ -114,5 +114,8 @@ class AgentState:
         """Advance to a new tick — reset per-tick state."""
         self.current_tick = tick
         self.actions_this_tick = 0
-        self.observed_offers.clear()
         self.rent_due_this_tick = 0.0
+
+    def clear_observed_offers(self) -> None:
+        """Clear observed offers — call after decide() processes them."""
+        self.observed_offers.clear()

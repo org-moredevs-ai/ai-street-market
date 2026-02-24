@@ -1,15 +1,16 @@
-"""Tests for the Narrator — LLM narrative generation with fallback."""
+"""Tests for the Narrator — LLM narrative generation via LangChain/OpenRouter."""
 
 from __future__ import annotations
 
+import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from streetmarket import MarketWeather
 
 from services.town_crier.narrator import (
-    NARRATION_TOOL,
     SYSTEM_PROMPT,
     NarrationResult,
+    NarrationSchema,
     Narrator,
 )
 
@@ -95,54 +96,10 @@ class TestNarrationResult:
         assert r.predictions is None
 
 
-# ── Narrator initialization ──────────────────────────────────────────────────
+# ── System prompt ──────────────────────────────────────────────────────────
 
 
-class TestNarratorInit:
-    def test_default_disabled(self) -> None:
-        with patch.dict("os.environ", {}, clear=True):
-            narrator = Narrator()
-            narrator.__post_init__()
-            assert narrator.enabled is False
-
-    def test_enabled_without_api_key(self) -> None:
-        with patch.dict("os.environ", {"TOWN_CRIER_USE_LLM": "true"}, clear=True):
-            narrator = Narrator()
-            narrator.__post_init__()
-            assert narrator.enabled is False
-
-    def test_enabled_with_api_key(self) -> None:
-        # Manually construct a narrator as if LLM was enabled
-        narrator = Narrator.__new__(Narrator)
-        narrator.enabled = True
-        narrator._client = MagicMock()
-        assert narrator.enabled is True
-        assert narrator._client is not None
-
-    def test_disabled_explicit(self) -> None:
-        with patch.dict("os.environ", {"TOWN_CRIER_USE_LLM": "false"}, clear=True):
-            narrator = Narrator()
-            narrator.__post_init__()
-            assert narrator.enabled is False
-
-
-# ── Tool schema ──────────────────────────────────────────────────────────────
-
-
-class TestToolSchema:
-    def test_tool_name(self) -> None:
-        assert NARRATION_TOOL["name"] == "publish_narration"
-
-    def test_tool_has_required_fields(self) -> None:
-        required = NARRATION_TOOL["input_schema"]["required"]
-        assert "headline" in required
-        assert "body" in required
-        assert "drama_level" in required
-
-    def test_predictions_is_optional(self) -> None:
-        required = NARRATION_TOOL["input_schema"]["required"]
-        assert "predictions" not in required
-
+class TestSystemPrompt:
     def test_system_prompt_has_personality(self) -> None:
         assert "Town Crier" in SYSTEM_PROMPT
         assert "medieval" in SYSTEM_PROMPT.lower()
@@ -153,9 +110,7 @@ class TestToolSchema:
 
 class TestFallbackNarration:
     def test_fallback_empty_summary(self) -> None:
-        narrator = Narrator.__new__(Narrator)
-        narrator.enabled = False
-        narrator._client = None
+        narrator = Narrator()
         result = narrator._fallback_narration(_empty_summary(), MarketWeather.STABLE)
         assert isinstance(result, NarrationResult)
         assert result.headline == "Market report"
@@ -163,18 +118,14 @@ class TestFallbackNarration:
         assert result.predictions is None
 
     def test_fallback_with_settlements(self) -> None:
-        narrator = Narrator.__new__(Narrator)
-        narrator.enabled = False
-        narrator._client = None
+        narrator = Narrator()
         summary = _rich_summary()
         result = narrator._fallback_narration(summary, MarketWeather.BOOMING)
         assert "3 trades" in result.headline
         assert "20 coins" in result.body
 
     def test_fallback_with_bankruptcies(self) -> None:
-        narrator = Narrator.__new__(Narrator)
-        narrator.enabled = False
-        narrator._client = None
+        narrator = Narrator()
         summary = _empty_summary()
         summary["bankruptcies"] = ["farmer", "chef"]
         result = narrator._fallback_narration(summary, MarketWeather.CRISIS)
@@ -183,27 +134,21 @@ class TestFallbackNarration:
         assert result.drama_level == 5
 
     def test_fallback_with_joins(self) -> None:
-        narrator = Narrator.__new__(Narrator)
-        narrator.enabled = False
-        narrator._client = None
+        narrator = Narrator()
         summary = _empty_summary()
         summary["joins"] = ["mason"]
         result = narrator._fallback_narration(summary, MarketWeather.STABLE)
         assert "mason" in result.headline
 
     def test_fallback_with_nature_events(self) -> None:
-        narrator = Narrator.__new__(Narrator)
-        narrator.enabled = False
-        narrator._client = None
+        narrator = Narrator()
         summary = _empty_summary()
         summary["nature_events"] = [{"title": "Drought", "description": "No rain"}]
         result = narrator._fallback_narration(summary, MarketWeather.STRESSED)
         assert "Drought" in result.headline or "Drought" in result.body
 
     def test_fallback_with_crafts(self) -> None:
-        narrator = Narrator.__new__(Narrator)
-        narrator.enabled = False
-        narrator._client = None
+        narrator = Narrator()
         summary = _empty_summary()
         summary["crafts"] = [
             {"agent_id": "chef", "recipe": "soup", "output": "soup", "quantity": 1},
@@ -213,9 +158,7 @@ class TestFallbackNarration:
         assert "2x soup" in result.body
 
     def test_fallback_drama_map(self) -> None:
-        narrator = Narrator.__new__(Narrator)
-        narrator.enabled = False
-        narrator._client = None
+        narrator = Narrator()
         summary = _empty_summary()
         for weather, expected_drama in [
             (MarketWeather.STABLE, 1),
@@ -228,9 +171,7 @@ class TestFallbackNarration:
             assert result.drama_level == expected_drama, f"Failed for {weather}"
 
     def test_fallback_body_includes_weather(self) -> None:
-        narrator = Narrator.__new__(Narrator)
-        narrator.enabled = False
-        narrator._client = None
+        narrator = Narrator()
         result = narrator._fallback_narration(
             _empty_summary(), MarketWeather.BOOMING
         )
@@ -242,10 +183,7 @@ class TestFallbackNarration:
 
 class TestBuildPrompt:
     def _narrator(self) -> Narrator:
-        narrator = Narrator.__new__(Narrator)
-        narrator.enabled = False
-        narrator._client = None
-        return narrator
+        return Narrator()
 
     def test_prompt_includes_weather(self) -> None:
         prompt = self._narrator()._build_prompt(_empty_summary(), MarketWeather.STABLE)
@@ -290,139 +228,63 @@ class TestBuildPrompt:
         assert "100 coins" in prompt
 
 
-# ── Parse tool response ──────────────────────────────────────────────────────
-
-
-class TestParseToolResponse:
-    def _narrator(self) -> Narrator:
-        narrator = Narrator.__new__(Narrator)
-        narrator.enabled = False
-        narrator._client = None
-        return narrator
-
-    def test_parse_valid_response(self) -> None:
-        tool_input = {
-            "headline": "Big news!",
-            "body": "Something happened.",
-            "predictions": "More to come.",
-            "drama_level": 4,
-        }
-        result = self._narrator()._parse_tool_response(tool_input)
-        assert result.headline == "Big news!"
-        assert result.body == "Something happened."
-        assert result.predictions == "More to come."
-        assert result.drama_level == 4
-
-    def test_parse_without_predictions(self) -> None:
-        tool_input = {
-            "headline": "Quiet",
-            "body": "Nothing.",
-            "drama_level": 1,
-        }
-        result = self._narrator()._parse_tool_response(tool_input)
-        assert result.predictions is None
-
-    def test_parse_clamps_drama_level(self) -> None:
-        result = self._narrator()._parse_tool_response({
-            "headline": "x", "body": "y", "drama_level": 10,
-        })
-        assert result.drama_level == 5
-
-        result = self._narrator()._parse_tool_response({
-            "headline": "x", "body": "y", "drama_level": -1,
-        })
-        assert result.drama_level == 1
-
-    def test_parse_truncates_headline(self) -> None:
-        result = self._narrator()._parse_tool_response({
-            "headline": "x" * 200,
-            "body": "y",
-            "drama_level": 3,
-        })
-        assert len(result.headline) <= 100
-
-    def test_parse_truncates_body(self) -> None:
-        result = self._narrator()._parse_tool_response({
-            "headline": "x",
-            "body": "y" * 600,
-            "drama_level": 3,
-        })
-        assert len(result.body) <= 500
-
-    def test_parse_truncates_predictions(self) -> None:
-        result = self._narrator()._parse_tool_response({
-            "headline": "x",
-            "body": "y",
-            "predictions": "z" * 300,
-            "drama_level": 3,
-        })
-        assert result.predictions is not None
-        assert len(result.predictions) <= 200
-
-
-# ── Generate narration (async) ───────────────────────────────────────────────
+# ── Generate narration (async, LangChain mocked) ────────────────────────────
 
 
 class TestGenerateNarration:
-    async def test_generate_disabled_uses_fallback(self) -> None:
-        narrator = Narrator.__new__(Narrator)
-        narrator.enabled = False
-        narrator._client = None
-        result = await narrator.generate_narration(_empty_summary(), MarketWeather.STABLE)
-        assert isinstance(result, NarrationResult)
-        assert result.headline == "Market report"
-
     async def test_generate_with_llm_success(self) -> None:
-        narrator = Narrator.__new__(Narrator)
-        narrator.enabled = True
+        narrator = Narrator()
 
-        # Mock the LLM response
-        mock_block = MagicMock()
-        mock_block.type = "tool_use"
-        mock_block.name = "publish_narration"
-        mock_block.input = {
-            "headline": "Hear ye!",
-            "body": "The market thrives.",
-            "drama_level": 3,
+        mock_result = NarrationSchema(
+            headline="Hear ye!",
+            body="The market thrives.",
+            predictions=None,
+            drama_level=3,
+        )
+        mock_structured = AsyncMock(return_value=mock_result)
+        mock_llm = MagicMock()
+        mock_llm.with_structured_output.return_value = MagicMock(ainvoke=mock_structured)
+
+        env = {
+            "OPENROUTER_API_KEY": "sk-or-test",
+            "DEFAULT_MODEL": "test-model",
         }
-        mock_response = MagicMock()
-        mock_response.content = [mock_block]
+        with patch.dict(os.environ, env, clear=False):
+            with patch("services.town_crier.narrator.ChatOpenAI", return_value=mock_llm):
+                result = await narrator.generate_narration(
+                    _empty_summary(), MarketWeather.STABLE
+                )
 
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=mock_response)
-        narrator._client = mock_client
-
-        result = await narrator.generate_narration(_empty_summary(), MarketWeather.STABLE)
         assert result.headline == "Hear ye!"
         assert result.drama_level == 3
 
     async def test_generate_llm_error_falls_back(self) -> None:
-        narrator = Narrator.__new__(Narrator)
-        narrator.enabled = True
+        narrator = Narrator()
 
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(side_effect=RuntimeError("API down"))
-        narrator._client = mock_client
+        mock_structured = AsyncMock(side_effect=RuntimeError("API down"))
+        mock_llm = MagicMock()
+        mock_llm.with_structured_output.return_value = MagicMock(ainvoke=mock_structured)
 
-        result = await narrator.generate_narration(_empty_summary(), MarketWeather.STABLE)
-        # Should fall back gracefully
+        env = {
+            "OPENROUTER_API_KEY": "sk-or-test",
+            "DEFAULT_MODEL": "test-model",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            with patch("services.town_crier.narrator.ChatOpenAI", return_value=mock_llm):
+                result = await narrator.generate_narration(
+                    _empty_summary(), MarketWeather.STABLE
+                )
+
         assert isinstance(result, NarrationResult)
         assert result.headline == "Market report"
 
-    async def test_generate_llm_no_tool_use_falls_back(self) -> None:
-        narrator = Narrator.__new__(Narrator)
-        narrator.enabled = True
+    async def test_generate_no_api_key_falls_back(self) -> None:
+        narrator = Narrator()
 
-        # Response without tool_use
-        mock_block = MagicMock()
-        mock_block.type = "text"
-        mock_response = MagicMock()
-        mock_response.content = [mock_block]
+        with patch.dict(os.environ, {}, clear=True):
+            result = await narrator.generate_narration(
+                _empty_summary(), MarketWeather.STABLE
+            )
 
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=mock_response)
-        narrator._client = mock_client
-
-        result = await narrator.generate_narration(_empty_summary(), MarketWeather.STABLE)
         assert isinstance(result, NarrationResult)
         assert result.headline == "Market report"

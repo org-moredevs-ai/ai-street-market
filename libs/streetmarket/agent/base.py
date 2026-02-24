@@ -55,10 +55,11 @@ class TradingAgent(ABC):
         return self._state
 
     @abstractmethod
-    def decide(self, state: AgentState) -> list[Action]:
+    async def decide(self, state: AgentState) -> list[Action]:
         """Strategy function: given current state, return actions to execute.
 
         This is the only method subclasses must implement.
+        Async to support LLM-powered decision making.
         """
 
     async def start(self) -> None:
@@ -140,7 +141,9 @@ class TradingAgent(ABC):
                 )
 
         # Run strategy
-        actions = self.decide(self._state)
+        actions = await self.decide(self._state)
+        # Clear observed offers after decide() has processed them
+        self._state.clear_observed_offers()
         for action in actions:
             if self._state.remaining_actions(self.MAX_ACTIONS_PER_TICK) <= 0:
                 logger.debug("[tick %d] %s: action limit reached", tick, self.AGENT_ID)

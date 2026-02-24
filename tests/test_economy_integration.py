@@ -1,6 +1,7 @@
 """Integration tests for the full economy — all agents trading together.
 
 Requires NATS running (make infra-up).
+LLM calls are mocked — agents use hardcoded strategies in integration tests.
 """
 
 import asyncio
@@ -15,7 +16,9 @@ from streetmarket import (
 )
 
 from agents.chef.agent import ChefAgent
+from agents.chef.strategy import decide_hardcoded as chef_decide
 from agents.farmer.agent import FarmerAgent
+from agents.farmer.strategy import decide_hardcoded as farmer_decide
 from services.banker.banker import BankerAgent
 from services.world.world import WorldEngine
 
@@ -45,6 +48,12 @@ async def banker(nats_url: str) -> BankerAgent:
 @pytest.fixture
 async def farmer(nats_url: str) -> FarmerAgent:
     agent = FarmerAgent(nats_url)
+
+    # Mock LLM brain with hardcoded strategy for integration tests
+    async def _decide(state):  # type: ignore[no-untyped-def]
+        return farmer_decide(state)
+
+    agent.decide = _decide  # type: ignore[assignment]
     await agent.start()
     yield agent  # type: ignore[misc]
     await agent.stop()
@@ -53,6 +62,12 @@ async def farmer(nats_url: str) -> FarmerAgent:
 @pytest.fixture
 async def chef(nats_url: str) -> ChefAgent:
     agent = ChefAgent(nats_url)
+
+    # Mock LLM brain with hardcoded strategy for integration tests
+    async def _decide(state):  # type: ignore[no-untyped-def]
+        return chef_decide(state)
+
+    agent.decide = _decide  # type: ignore[assignment]
     await agent.start()
     yield agent  # type: ignore[misc]
     await agent.stop()

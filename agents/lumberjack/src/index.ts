@@ -30,7 +30,8 @@ import {
   removeInventory,
   remainingActions,
 } from "./state.js";
-import { decide, type Action } from "./strategy.js";
+import type { Action } from "./strategy.js";
+import { LumberjackLLMBrain } from "./llm_brain.js";
 
 const AGENT_ID = "lumberjack-01";
 const AGENT_NAME = "Jack Lumber";
@@ -48,6 +49,7 @@ const SHELF_RECIPE = {
 };
 
 const state: AgentState = createInitialState(AGENT_ID);
+const llmBrain = new LumberjackLLMBrain();
 
 let nc: NatsConnection;
 let js: JetStreamClient;
@@ -255,8 +257,10 @@ async function onTick(tickNumber: number): Promise<void> {
     });
   }
 
-  // Run strategy
-  const actions = decide(state);
+  // Run strategy (LLM-powered)
+  const actions = await llmBrain.decide(state);
+  // Clear observed offers after decide() has processed them
+  state.observedOffers = [];
   for (const action of actions) {
     if (remainingActions(state) <= 0) break;
     await executeAction(action);

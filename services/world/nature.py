@@ -1,55 +1,49 @@
 """NatureBrain — LLM-powered nature intelligence for dynamic spawn tables.
 
-Calls Claude Haiku every N ticks to generate contextual spawn amounts and
-optional nature events. Falls back to DEFAULT_SPAWN_TABLE on any failure.
+Uses LangChain/OpenRouter to generate contextual spawn amounts and
+optional nature events. LLM is always on — there is no toggle.
+Falls back to DEFAULT_SPAWN_TABLE only on runtime errors.
 """
 
+import asyncio
 import logging
-import os
 import uuid
 from dataclasses import dataclass, field
+from typing import Any
+
+from langchain_core.messages import HumanMessage
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field
+from streetmarket.agent.llm_config import LLMConfig
 
 logger = logging.getLogger(__name__)
 
 # How often (in ticks) to query the LLM
 LLM_CALL_INTERVAL = 5
+LLM_TIMEOUT = 15.0
 
-# Tool definition for structured output
-SPAWN_TOOL = {
-    "name": "set_nature",
-    "description": (
-        "Set the spawn quantities for this tick cycle and optionally trigger a nature event. "
-        "Spawn quantities are the number of each raw material available per tick."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "spawns": {
-                "type": "object",
-                "description": "Raw material spawn quantities per tick",
-                "properties": {
-                    "potato": {"type": "integer", "minimum": 0, "maximum": 50},
-                    "onion": {"type": "integer", "minimum": 0, "maximum": 50},
-                    "wood": {"type": "integer", "minimum": 0, "maximum": 50},
-                    "nails": {"type": "integer", "minimum": 0, "maximum": 50},
-                    "stone": {"type": "integer", "minimum": 0, "maximum": 50},
-                },
-                "required": ["potato", "onion", "wood", "nails", "stone"],
-            },
-            "event": {
-                "type": "object",
-                "description": "Optional nature event (drought, flood, bonanza, etc.)",
-                "properties": {
-                    "title": {"type": "string", "maxLength": 50},
-                    "description": {"type": "string", "maxLength": 200},
-                    "duration_ticks": {"type": "integer", "minimum": 1, "maximum": 15},
-                },
-                "required": ["title", "description", "duration_ticks"],
-            },
-        },
-        "required": ["spawns"],
-    },
-}
+
+class NatureEventSchema(BaseModel):
+    """Optional nature event schema for structured output."""
+
+    title: str = Field(max_length=50)
+    description: str = Field(max_length=200)
+    duration_ticks: int = Field(ge=1, le=15)
+
+
+class NatureOutputSchema(BaseModel):
+    """Structured output schema for nature intelligence."""
+
+    spawns: dict[str, int] = Field(
+        description=(
+            "Raw material spawn quantities per tick"
+            " (potato, onion, wood, nails, stone). Range 0-50."
+        )
+    )
+    event: NatureEventSchema | None = Field(
+        default=None,
+        description="Optional nature event (drought, flood, bonanza, etc.)",
+    )
 
 
 @dataclass
@@ -68,37 +62,14 @@ class NatureEvent:
 class NatureBrain:
     """LLM-powered nature intelligence.
 
-    When enabled, calls Claude Haiku every LLM_CALL_INTERVAL ticks to
-    generate contextual spawn tables. Results are cached between calls.
-    Falls back to default on any error.
+    Always uses LLM via OpenRouter every LLM_CALL_INTERVAL ticks.
+    Results are cached between calls. Falls back to default on error.
     """
 
-    enabled: bool = False
     _cached_spawns: dict[str, int] | None = None
     _active_event: NatureEvent | None = None
     _last_call_tick: int = 0
-    _gather_history: list[dict] = field(default_factory=list)
-    _client: object | None = None  # anthropic.AsyncAnthropic, typed as object to avoid import
-
-    def __post_init__(self) -> None:
-        self.enabled = os.environ.get("WORLD_USE_LLM_NATURE", "false").lower() == "true"
-        if self.enabled:
-            try:
-                import anthropic
-
-                api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-                if not api_key:
-                    logger.warning("WORLD_USE_LLM_NATURE=true but no ANTHROPIC_API_KEY — disabling")
-                    self.enabled = False
-                else:
-                    self._client = anthropic.AsyncAnthropic()
-                    logger.info(
-                        "NatureBrain enabled — will call LLM every %d ticks",
-                        LLM_CALL_INTERVAL,
-                    )
-            except ImportError:
-                logger.warning("anthropic package not installed — disabling NatureBrain")
-                self.enabled = False
+    _gather_history: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def active_event(self) -> NatureEvent | None:
@@ -112,18 +83,15 @@ class NatureBrain:
             "quantity": quantity,
             "tick": tick,
         })
-        # Keep only last 50
         if len(self._gather_history) > 50:
             self._gather_history = self._gather_history[-50:]
 
-    def get_recent_gathers(self) -> list[dict]:
+    def get_recent_gathers(self) -> list[dict[str, Any]]:
         """Get the recent gather history."""
         return list(self._gather_history)
 
     def should_call_llm(self, current_tick: int) -> bool:
         """Check if it's time to query the LLM."""
-        if not self.enabled:
-            return False
         return (current_tick - self._last_call_tick) >= LLM_CALL_INTERVAL
 
     def get_spawn_table(
@@ -135,7 +103,6 @@ class NatureBrain:
         """
         if self._cached_spawns is not None:
             spawns = dict(self._cached_spawns)
-            # Apply event effects if active
             if self._active_event and self._active_event.remaining_ticks > 0:
                 for item, multiplier in self._active_event.effects.items():
                     if item in spawns:
@@ -164,18 +131,19 @@ class NatureBrain:
 
         Falls back to default_table on any error.
         """
-        if not self.enabled:
-            return dict(default_table)
-
         self._last_call_tick = current_tick
 
         try:
-            client = self._client
-            if client is None:
-                logger.warning("NatureBrain client not initialized — using defaults")
-                return dict(default_table)
+            config = LLMConfig.for_service("world")
+            llm = ChatOpenAI(
+                model=config.model,
+                api_key=config.api_key,  # type: ignore[arg-type]
+                base_url=config.api_base,
+                max_tokens=config.max_tokens,  # type: ignore[call-arg]
+                temperature=config.temperature,
+            )
+            structured = llm.with_structured_output(NatureOutputSchema)
 
-            # Build context for the LLM
             gather_summary = self._summarize_gathers()
             energy_summary = ", ".join(
                 f"{a}: {e:.0f}" for a, e in sorted(energy_levels.items())
@@ -201,57 +169,48 @@ class NatureBrain:
                 f"bonanza, blight, etc.) to add drama. Events should last 3-10 ticks."
             )
 
-            response = await client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=500,
-                tools=[SPAWN_TOOL],  # type: ignore[list-item]
-                messages=[{"role": "user", "content": prompt}],
+            result: NatureOutputSchema = await asyncio.wait_for(
+                structured.ainvoke([  # type: ignore[arg-type]
+                    HumanMessage(content=prompt),
+                ]),
+                timeout=LLM_TIMEOUT,
             )
 
-            # Extract tool_use from response
-            for block in response.content:
-                if block.type == "tool_use" and block.name == "set_nature":
-                    return self._process_llm_response(block.input, current_tick)
-
-            logger.warning("LLM response had no tool_use — using default spawns")
-            return dict(default_table)
+            return self._process_llm_response(result, current_tick)
 
         except Exception as e:
             logger.warning("NatureBrain LLM call failed: %s — using defaults", e)
             return dict(default_table)
 
     def _process_llm_response(
-        self, tool_input: dict, current_tick: int
+        self, result: NatureOutputSchema, current_tick: int
     ) -> dict[str, int]:
-        """Process the LLM's tool_use response into a spawn table."""
-        spawns_raw = tool_input.get("spawns", {})
+        """Process the LLM's structured response into a spawn table."""
         spawns: dict[str, int] = {}
         for item in ("potato", "onion", "wood", "nails", "stone"):
-            val = spawns_raw.get(item, 0)
+            val = result.spawns.get(item, 0)
             spawns[item] = max(0, min(50, int(val)))
 
         self._cached_spawns = spawns
 
         # Handle optional event
-        event_data = tool_input.get("event")
-        if event_data and not self._active_event:
+        if result.event and not self._active_event:
             effects: dict[str, float] = {}
-            # Compute effects as ratios of new spawns vs defaults
             from services.world.state import DEFAULT_SPAWN_TABLE
 
             for item, default_qty in DEFAULT_SPAWN_TABLE.items():
                 if default_qty > 0 and item in spawns:
                     ratio = spawns[item] / default_qty
-                    if abs(ratio - 1.0) > 0.05:  # Only record significant changes
+                    if abs(ratio - 1.0) > 0.05:
                         effects[item] = round(ratio, 2)
 
             self._active_event = NatureEvent(
                 event_id=str(uuid.uuid4()),
-                title=event_data.get("title", "Unknown Event"),
-                description=event_data.get("description", ""),
+                title=result.event.title[:50],
+                description=result.event.description[:200],
                 effects=effects,
-                duration_ticks=max(1, min(15, event_data.get("duration_ticks", 5))),
-                remaining_ticks=max(1, min(15, event_data.get("duration_ticks", 5))),
+                duration_ticks=max(1, min(15, result.event.duration_ticks)),
+                remaining_ticks=max(1, min(15, result.event.duration_ticks)),
             )
             logger.info(
                 "Nature event: '%s' — %s (duration: %d ticks)",
@@ -267,7 +226,6 @@ class NatureBrain:
         if not self._gather_history:
             return "No gather activity yet."
 
-        # Count items gathered per item type
         totals: dict[str, int] = {}
         for g in self._gather_history:
             item = g["item"]

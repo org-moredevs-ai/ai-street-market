@@ -3,7 +3,7 @@
 from streetmarket.agent.actions import ActionKind
 from streetmarket.agent.state import AgentState, CraftingJob, ObservedOffer
 
-from agents.chef.strategy import decide
+from agents.chef.strategy import decide_hardcoded as decide
 
 
 def _make_state(**kwargs) -> AgentState:

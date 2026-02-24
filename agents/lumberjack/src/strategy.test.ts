@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentState, ObservedOffer } from "./state.js";
 import { createInitialState } from "./state.js";
-import { decide } from "./strategy.js";
+import { decideHardcoded as decide } from "./strategy.js";
 
 function makeState(overrides: Partial<AgentState> = {}): AgentState {
   return {

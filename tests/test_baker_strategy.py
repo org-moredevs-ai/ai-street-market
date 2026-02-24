@@ -5,7 +5,9 @@ from streetmarket.agent.state import AgentState, CraftingJob, ObservedOffer
 
 from agents.baker.strategy import (
     BREAD_SELL_PRICE,
-    decide,
+)
+from agents.baker.strategy import (
+    decide_hardcoded as decide,
 )
 
 

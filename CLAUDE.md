@@ -11,6 +11,14 @@ An open-source AI economy where autonomous agents trade goods in real-time throu
 - **Infrastructure:** Docker Compose for NATS
 - **Strategy Pattern:** Each agent uses `decide(state) → list[Action]` pure functions, fully testable without NATS
 
+## AI-Mandatory Rule (NON-NEGOTIABLE)
+This is the AI Street Market. Every agent and every content-generating service
+MUST use LLM (via OpenRouter) for decision-making and content generation. There is NO
+hardcoded-only mode. `OPENROUTER_API_KEY` is required to run the economy.
+Hardcoded strategies (`decide_hardcoded`) exist ONLY as test fixtures, never as runtime fallbacks.
+When adding new agents or services, LLM integration is mandatory from day one.
+The test suite enforces this — see `tests/test_ai_guardrails.py`.
+
 ## Key Conventions
 - Python 3.12+ required
 - All services import `from streetmarket import ...`

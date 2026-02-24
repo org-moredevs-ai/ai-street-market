@@ -3,8 +3,10 @@
 from streetmarket.agent import (
     Action,
     ActionKind,
+    AgentLLMBrain,
     AgentState,
     CraftingJob,
+    LLMConfig,
     ObservedOffer,
     PendingOffer,
     TradingAgent,
@@ -72,8 +74,10 @@ __all__ = [
     # Agent SDK
     "Action",
     "ActionKind",
+    "AgentLLMBrain",
     "AgentState",
     "CraftingJob",
+    "LLMConfig",
     "ObservedOffer",
     "PendingOffer",
     "TradingAgent",

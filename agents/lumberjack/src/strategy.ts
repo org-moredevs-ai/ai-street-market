@@ -1,6 +1,8 @@
 /**
  * Lumberjack strategy — pure function, no I/O.
  *
+ * decideHardcoded() is kept as a test fixture. At runtime, the LLM brain is used.
+ *
  * Priority order each tick:
  * 0. REST if energy critically low (<10) — only consume soup
  * 1. CONSUME soup if energy < 30 (survival)
@@ -47,7 +49,7 @@ const ENERGY_REST_THRESHOLD = 10.0;
 /** Soup bid price (base_price for soup is 2.0, bid at 1.3x) */
 const SOUP_BID_PRICE = 2.6;
 
-export function decide(state: AgentState): Action[] {
+export function decideHardcoded(state: AgentState): Action[] {
   const actions: Action[] = [];
   let budget = remainingActions(state);
 
