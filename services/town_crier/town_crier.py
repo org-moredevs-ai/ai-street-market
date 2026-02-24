@@ -168,7 +168,7 @@ class TownCrierService:
             tick=tick,
         )
 
-        await self._bus.publish(envelope)
+        await self._bus.publish(Topics.SQUARE, envelope)
         logger.info(
             "[tick %d] Narration: %s (weather=%s, drama=%d)",
             tick,

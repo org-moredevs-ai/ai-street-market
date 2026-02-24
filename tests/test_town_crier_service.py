@@ -262,7 +262,8 @@ class TestNarrationPublishing:
 
         svc._bus.publish.assert_called_once()
         call_args = svc._bus.publish.call_args[0]
-        env = call_args[0]
+        assert call_args[0] == Topics.SQUARE
+        env = call_args[1]
         assert env.type == MessageType.NARRATION
         assert env.from_agent == "town_crier"
         assert env.topic == Topics.SQUARE
@@ -281,7 +282,7 @@ class TestNarrationPublishing:
         svc.state.advance_tick(NARRATION_INTERVAL)
         await svc._maybe_narrate(NARRATION_INTERVAL)
 
-        env = svc._bus.publish.call_args[0][0]
+        env = svc._bus.publish.call_args[0][1]
         assert "weather" in env.payload
 
     async def test_no_narration_at_wrong_tick(self) -> None:
