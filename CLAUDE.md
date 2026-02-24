@@ -5,9 +5,11 @@ An open-source AI economy where autonomous agents trade goods in real-time throu
 
 ## Architecture
 - **Message Bus:** NATS with JetStream (persistence + replay)
-- **Shared Library:** `streetmarket` package in `libs/` — models, helpers, NATS client
-- **Services:** Each agent is an independent service in `services/`
+- **Shared Library:** `streetmarket` package in `libs/` — models, helpers, NATS client, Agent SDK
+- **Services:** Market infrastructure in `services/` — Governor (validator), Banker (settlements), World (nature/ticks)
+- **Agents:** Trading participants in `agents/` — Farmer, Chef, Baker, Mason, Builder (Python), Lumberjack (TypeScript)
 - **Infrastructure:** Docker Compose for NATS
+- **Strategy Pattern:** Each agent uses `decide(state) → list[Action]` pure functions, fully testable without NATS
 
 ## Key Conventions
 - Python 3.12+ required
@@ -24,6 +26,18 @@ make infra-down     # Stop NATS
 make test           # Run all tests
 make lint           # Ruff + mypy
 make proof-of-life  # Run demo script
+make run-economy    # Run full economy (all services + agents)
+
+# Individual services/agents
+make governor       # Validation service
+make banker         # Settlement service
+make world          # Nature/tick engine
+make farmer         # Potato/onion gatherer
+make chef           # Soup crafter
+make baker          # Bread crafter
+make lumberjack     # Wood/nails gatherer (TypeScript)
+make mason          # Stone gatherer, wall crafter
+make builder        # House crafter
 ```
 
 ## Testing
@@ -33,16 +47,45 @@ make proof-of-life  # Run demo script
 
 ## Message Protocol
 Every message uses an `Envelope` with: id, from, topic, timestamp, tick, type, payload.
-Message types: offer, bid, accept, counter, craft_start, craft_complete, join, heartbeat, tick, settlement, validation_result.
+
+Message types:
+- **Trading:** offer, bid, accept, counter, settlement
+- **Crafting:** craft_start, craft_complete
+- **Resources:** spawn, gather, gather_result, consume, consume_result
+- **Energy:** energy_update
+- **Economy:** rent_due, bankruptcy, nature_event
+- **System:** join, heartbeat, tick, validation_result
+
+## Economy Mechanics
+- **Energy:** Actions cost energy (gather=10, craft=15, trade=5). Regenerates 5/tick. Food restores energy (soup=30, bread=20).
+- **Rent:** 2 coins/tick after 20-tick grace period. House ownership exempts agents.
+- **Storage:** Base limit 50 items + 10 per shelf owned (max 3 shelves = 80).
+- **Bankruptcy:** 5 consecutive ticks at zero wallet + zero inventory value = bankrupt (blocked from trading).
+- **LLM Nature:** Optional Claude Haiku integration for dynamic resource spawns (opt-in via `WORLD_USE_LLM_NATURE` env var).
 
 ## Project Structure
 ```
-libs/streetmarket/     — Shared protocol library (models, helpers, client)
+libs/streetmarket/     — Shared protocol library (models, helpers, client, Agent SDK)
+  models/              — Envelope, messages, catalogue, energy, rent, topics
+  agent/               — TradingAgent base class, AgentState, Action
+  helpers/             — Factory, validation, topic mapping
+  client/              — NATS client wrapper
+agents/                — Trading agents (external participants)
+  farmer/              — Gathers potato + onion, sells raw goods
+  chef/                — Buys potato + onion, crafts soup, sells food
+  baker/               — Buys potato, crafts bread, sells food
+  lumberjack/          — (TypeScript) Gathers wood + nails, crafts shelf
+  mason/               — Gathers stone, buys wood, crafts wall
+  builder/             — Buys wall + shelf + furniture, crafts house
+services/              — Market infrastructure
+  governor/            — Validates all actions (business rules, energy checks)
+  banker/              — Settles trades, manages wallets/inventory, rent, bankruptcy
+  world/               — Tick engine, resource spawns, energy authority, LLM nature
 infrastructure/        — Docker Compose + NATS config
-services/              — Agent services (future)
-tests/                 — All tests
-scripts/               — Dev scripts and demos
+tests/                 — All tests (631 Python + 22 TypeScript)
+scripts/               — Dev scripts, demos, economy runner
 sessions/              — Development session journal (see below)
+references/            — Roadmap and design docs
 ```
 
 ## Session Journal (MANDATORY)
