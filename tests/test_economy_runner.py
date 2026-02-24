@@ -52,8 +52,8 @@ class TestServiceDefinitions:
                 assert svc.phase == 3, f"{svc.name} should be phase 3"
 
     def test_expected_service_count(self) -> None:
-        # 3 core services + 1 town_crier + 6 agents = 10
-        assert len(SERVICES) == 10
+        # 3 core services + 1 town_crier + 1 ws_bridge + 6 agents = 11
+        assert len(SERVICES) == 11
 
     def test_service_definition_is_frozen(self) -> None:
         svc = SERVICES[0]
@@ -93,7 +93,7 @@ class TestPhases:
     def test_phase_2_has_core_services(self) -> None:
         phase2 = get_services_for_phase(2)
         names = {s.name for s in phase2}
-        assert names == {"world", "governor", "banker", "town_crier"}
+        assert names == {"world", "governor", "banker", "town_crier", "websocket_bridge"}
 
     def test_phase_3_has_agents(self) -> None:
         phase3 = get_services_for_phase(3)
@@ -110,6 +110,11 @@ class TestPhases:
         tc = next(s for s in SERVICES if s.name == "town_crier")
         assert tc.critical is False
         assert tc.phase == 2
+
+    def test_websocket_bridge_is_not_critical(self) -> None:
+        wb = next(s for s in SERVICES if s.name == "websocket_bridge")
+        assert wb.critical is False
+        assert wb.phase == 2
 
     def test_no_phase_3_is_critical(self) -> None:
         for svc in get_services_for_phase(3):

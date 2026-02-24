@@ -79,6 +79,14 @@ SERVICES: list[ServiceDefinition] = [
         phase=2,
         critical=False,
     ),
+    ServiceDefinition(
+        name="websocket_bridge",
+        label="ws_bridge",
+        command=[sys.executable, "-m", "services.websocket_bridge"],
+        color="\033[96m",  # bright cyan
+        phase=2,
+        critical=False,
+    ),
     # Phase 3: Trading agents
     ServiceDefinition(
         name="farmer",
