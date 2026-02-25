@@ -27,19 +27,19 @@ class TestRentConstants:
         assert RENT_PER_TICK > 0
 
     def test_rent_per_tick_value(self) -> None:
-        assert RENT_PER_TICK == 2.0
+        assert RENT_PER_TICK == 0.5
 
     def test_rent_grace_period_is_positive(self) -> None:
         assert RENT_GRACE_PERIOD > 0
 
     def test_rent_grace_period_value(self) -> None:
-        assert RENT_GRACE_PERIOD == 20
+        assert RENT_GRACE_PERIOD == 50
 
     def test_bankruptcy_grace_period_is_positive(self) -> None:
         assert BANKRUPTCY_GRACE_PERIOD > 0
 
     def test_bankruptcy_grace_period_value(self) -> None:
-        assert BANKRUPTCY_GRACE_PERIOD == 5
+        assert BANKRUPTCY_GRACE_PERIOD == 15
 
 
 # ── Storage constants ───────────────────────────────────────────────────────

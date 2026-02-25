@@ -29,12 +29,19 @@ class SpawnPool:
     remaining: dict[str, int] = field(default_factory=dict)
 
 
+# How many ticks a spawn remains valid for gathering.
+# With LLM agents (1-3s response time) and 5s tick interval,
+# spawns must survive at least 2 ticks to be usable.
+SPAWN_TTL = 3
+
+
 @dataclass
 class WorldState:
     """Tracks tick counter, active spawn pool, and energy for the World Engine."""
 
     current_tick: int = 0
     _active_spawn: SpawnPool | None = None
+    _recent_spawns: dict[str, SpawnPool] = field(default_factory=dict)
     _spawn_table: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_SPAWN_TABLE))
     _energy: dict[str, float] = field(default_factory=dict)
     _sheltered: set[str] = field(default_factory=set)
@@ -56,35 +63,45 @@ class WorldState:
         return self.current_tick
 
     def create_spawn(self) -> SpawnPool:
-        """Create a new spawn pool for the current tick, replacing any previous one."""
+        """Create a new spawn pool for the current tick.
+
+        The new pool becomes the active spawn. Old pools are kept
+        in _recent_spawns for SPAWN_TTL ticks so LLM agents with
+        delayed responses can still gather from them.
+        """
         pool = SpawnPool(
             spawn_id=str(uuid.uuid4()),
             tick=self.current_tick,
             remaining=dict(self._spawn_table),
         )
         self._active_spawn = pool
+        self._recent_spawns[pool.spawn_id] = pool
+        # Expire old spawns
+        cutoff = self.current_tick - SPAWN_TTL
+        expired = [sid for sid, sp in self._recent_spawns.items() if sp.tick < cutoff]
+        for sid in expired:
+            del self._recent_spawns[sid]
         return pool
 
     def try_gather(
         self, spawn_id: str, item: str, quantity: int
     ) -> tuple[int, str | None]:
-        """Attempt to gather resources from the active spawn pool.
+        """Attempt to gather resources from a spawn pool.
 
         Returns (granted_quantity, error_or_None).
         Supports partial grants: if pool has fewer than requested, grants what's left.
+        Looks up the spawn in recent spawns (TTL-based), not just the latest.
         """
-        if self._active_spawn is None:
-            return 0, "No active spawn"
-
-        if self._active_spawn.spawn_id != spawn_id:
+        pool = self._recent_spawns.get(spawn_id)
+        if pool is None:
             return 0, "Spawn expired or not found"
 
-        available = self._active_spawn.remaining.get(item, 0)
+        available = pool.remaining.get(item, 0)
         if available == 0:
             return 0, f"No {item} remaining in spawn"
 
         granted = min(quantity, available)
-        self._active_spawn.remaining[item] = available - granted
+        pool.remaining[item] = available - granted
         return granted, None
 
     # --- Energy operations ---

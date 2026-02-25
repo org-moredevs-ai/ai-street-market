@@ -1,7 +1,7 @@
 """Tests for the bankruptcy system — Phase 4."""
 
 from streetmarket import Envelope, MessageType
-from streetmarket.models.rent import BANKRUPTCY_GRACE_PERIOD, RENT_GRACE_PERIOD
+from streetmarket.models.rent import BANKRUPTCY_GRACE_PERIOD, RENT_GRACE_PERIOD, RENT_PER_TICK
 
 from services.banker.rules import check_all_bankruptcies, process_join, process_rent
 from services.banker.state import BankerState
@@ -136,20 +136,20 @@ class TestBankruptcyDetection:
     def test_bankruptcy_from_rent_drain(self) -> None:
         """Full lifecycle: rent drains wallet to 0, then bankruptcy after grace."""
         state = _setup_agent("a", join_tick=0)
-        # Set wallet to something small
+        # Set wallet to exactly 2 ticks of rent
         account = state.get_account("a")
         assert account is not None
-        account.wallet = 4.0  # 2 ticks of rent
+        account.wallet = RENT_PER_TICK * 2
 
         # Tick past rent grace
         tick = RENT_GRACE_PERIOD
         state.current_tick = tick
-        process_rent("a", state)  # 4 → 2
-        assert account.wallet == 2.0
+        process_rent("a", state)  # 2*rent → 1*rent
+        assert account.wallet == RENT_PER_TICK
 
         tick += 1
         state.current_tick = tick
-        process_rent("a", state)  # 2 → 0
+        process_rent("a", state)  # 1*rent → 0
         assert account.wallet == 0.0
 
         tick += 1

@@ -49,8 +49,8 @@ class TestShouldNarrate:
         state = TownCrierState()
         assert state.should_narrate(NARRATION_INTERVAL * 3) is True
 
-    def test_narration_interval_is_ten(self) -> None:
-        assert NARRATION_INTERVAL == 10
+    def test_narration_interval_is_five(self) -> None:
+        assert NARRATION_INTERVAL == 5
 
 
 # ── Settlement recording ─────────────────────────────────────────────────────

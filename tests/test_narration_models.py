@@ -80,7 +80,7 @@ class TestNarrationPayload:
         with pytest.raises(ValidationError):
             Narration(
                 headline="ok",
-                body="x" * 501,
+                body="x" * 1001,
                 weather=MarketWeather.STABLE,
                 drama_level=1,
                 window_start_tick=0,

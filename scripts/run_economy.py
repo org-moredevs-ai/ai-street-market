@@ -299,7 +299,11 @@ class EconomyRunner:
         print(format_log_line("runner", nats_color, msg))
 
     async def start(self) -> None:
-        """Start all services in phased order."""
+        """Start all services in phased order.
+
+        Phase 3 (agents) launches one agent every 10 seconds so each gets
+        a dramatic Town Crier introduction instead of all arriving at once.
+        """
         # Phase 1: NATS
         self._print("Phase 1: Infrastructure")
         await ensure_nats(self._print)
@@ -310,11 +314,16 @@ class EconomyRunner:
             phase_names = ", ".join(s.name for s in phase_services)
             self._print(f"Phase {phase}: Starting {phase_names}")
 
-            for svc_def in phase_services:
+            for i, svc_def in enumerate(phase_services):
                 mp = ManagedProcess(svc_def)
                 await mp.start()
                 self.managed.append(mp)
                 self._print(f"  Started {svc_def.name}")
+
+                # Stagger agent launches (phase 3) so Town Crier can
+                # introduce each one individually
+                if phase == 3 and i < len(phase_services) - 1:
+                    await asyncio.sleep(10)
 
             # Brief pause between phases to let services initialize
             await asyncio.sleep(1)

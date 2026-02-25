@@ -222,7 +222,7 @@ class Narration(BaseModel):
     """Town Crier periodic narrative summary of market activity."""
 
     headline: str = Field(max_length=100)
-    body: str = Field(max_length=500)
+    body: str = Field(max_length=1000)
     weather: MarketWeather
     predictions: str | None = Field(default=None, max_length=200)
     drama_level: int = Field(ge=1, le=5)

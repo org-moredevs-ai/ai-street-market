@@ -11,8 +11,8 @@ from dataclasses import dataclass, field
 from streetmarket.models.catalogue import ITEMS
 from streetmarket.models.messages import MarketWeather
 
-# Narration interval in ticks — 10 ticks to stay under LLM rate limits
-NARRATION_INTERVAL = 10
+# Narration interval in ticks — every 5 ticks (~25 seconds)
+NARRATION_INTERVAL = 5
 
 
 @dataclass

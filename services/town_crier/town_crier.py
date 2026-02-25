@@ -141,8 +141,16 @@ class TownCrierService:
             )
 
     async def _maybe_narrate(self, tick: int) -> None:
-        """Generate and publish a narration if it's time."""
-        if not self._state.should_narrate(tick):
+        """Generate and publish a narration if it's time.
+
+        Special narrations:
+        - tick 1: "The market is open!" announcement (before agents arrive)
+        - Every time a new agent joins: welcome narration
+        - Every NARRATION_INTERVAL ticks: regular market update
+        """
+        opening = tick == 1
+        welcome = len(self._state.joins) > 0 and tick > 1
+        if not opening and not welcome and not self._state.should_narrate(tick):
             return
 
         weather = self._state.compute_market_weather()

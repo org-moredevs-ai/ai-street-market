@@ -130,9 +130,10 @@ class TestProcessRent:
         # Set wallet to less than rent
         account = state.get_account("a")
         assert account is not None
-        account.wallet = 1.0
+        partial = RENT_PER_TICK * 0.5  # less than full rent
+        account.wallet = partial
         result = process_rent("a", state)
-        assert result.amount == 1.0
+        assert result.amount == partial
         assert result.wallet_after == 0.0
 
     def test_rent_records_zero_wallet(self) -> None:

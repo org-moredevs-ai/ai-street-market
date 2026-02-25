@@ -69,7 +69,7 @@ class TestTryGather:
         state = WorldState()
         granted, error = state.try_gather("fake-id", "potato", 5)
         assert granted == 0
-        assert error == "No active spawn"
+        assert error == "Spawn expired or not found"
 
     def test_wrong_spawn_id(self):
         state = self._state_with_spawn()

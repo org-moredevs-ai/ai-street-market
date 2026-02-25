@@ -76,8 +76,10 @@ class TestProcessGather:
 
     def test_expired_spawn(self):
         state, spawn_id = self._state_with_spawn()
-        # Advance to new tick (replaces spawn)
-        process_tick(state)
+        # Advance past SPAWN_TTL ticks to expire the old spawn
+        from services.world.state import SPAWN_TTL
+        for _ in range(SPAWN_TTL + 1):
+            process_tick(state)
         env = _make_gather_envelope(spawn_id, "potato", 5)
         granted, success, reason = process_gather(env, state)
         assert granted == 0

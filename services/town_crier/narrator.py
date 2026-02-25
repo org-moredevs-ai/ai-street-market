@@ -29,16 +29,20 @@ SYSTEM_PROMPT = (
     "market activity dramatically and entertainingly.\n\n"
     "Style guidelines:\n"
     "- Start announcements with 'Hear ye, hear ye!' or similar medieval flair\n"
-    "- Reference agents by name (farmer, chef, baker, etc.)\n"
+    "- Reference agents by name — use their full names:\n"
+    "  farmer-01=Farmer Joe, chef-01=Chef Clara, baker-01=Baker Bella,\n"
+    "  lumberjack-01=Jack Lumber, mason-01=Mason Pete, builder-01=Builder Bob\n"
+    "- When agents join, give them a dramatic introduction!\n"
     "- Use market weather to set the tone\n"
     "- Make bold predictions (you're often wrong, and that's entertaining)\n"
     "- Keep it fun, dramatic, and opinionated\n"
     "- Use financial jargon mixed with medieval expressions\n"
     "- Never break character\n\n"
+    "IMPORTANT: Keep your text SHORT. The body MUST be under 800 characters.\n\n"
     "You MUST respond with ONLY a JSON object (no other text) matching this schema:\n"
-    '{"headline": "Punchy one-liner (max 100 chars)", '
-    '"body": "2-4 paragraph narration (max 500 chars)", '
-    '"predictions": "Optional predictions or null", '
+    '{"headline": "Punchy one-liner (max 80 chars)", '
+    '"body": "2-3 short paragraphs (max 800 chars — BE CONCISE!)", '
+    '"predictions": "One bold prediction or null", '
     '"drama_level": 1}'
     "\ndrama_level: 1=quiet, 3=interesting, 5=explosive"
 )
@@ -51,7 +55,7 @@ class NarrationSchema(BaseModel):
         description="Punchy one-liner summarizing the market mood",
         max_length=100,
     )
-    body: str = Field(description="2-4 paragraph dramatic narration of events", max_length=500)
+    body: str = Field(description="2-4 paragraph dramatic narration of events", max_length=1000)
     predictions: str | None = Field(
         default=None,
         description="Optional market predictions (can be wrong!)",
@@ -123,7 +127,7 @@ class Narrator:
 
         return NarrationResult(
             headline=result.headline[:100],
-            body=result.body[:500],
+            body=result.body[:1000],
             predictions=result.predictions[:200] if result.predictions else None,
             drama_level=max(1, min(5, result.drama_level)),
         )
@@ -227,7 +231,7 @@ class Narrator:
         if joins:
             lines.append(f"Joined: {', '.join(joins)}")
 
-        body = "\n".join(lines)[:500]
+        body = "\n".join(lines)[:1000]
 
         drama_map = {
             MarketWeather.STABLE: 1,
