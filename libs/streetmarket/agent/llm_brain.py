@@ -29,6 +29,8 @@ logger = logging.getLogger(__name__)
 
 # Timeout for LLM calls (seconds). If exceeded, agent skips the tick.
 LLM_TIMEOUT = 15.0
+# Number of retries on LLM failure before giving up.
+LLM_MAX_RETRIES = 1
 
 
 # ---------------------------------------------------------------------------
@@ -102,56 +104,48 @@ class ActionPlan(BaseModel):
 # ---------------------------------------------------------------------------
 
 MARKET_RULES = """\
-You are a trading agent in the AI Street Market — a tick-based economy simulation.
+You are a trading agent in the AI Street Market — a tick-based economy.
 
-## Economy Rules
-- Each tick you may take up to 5 actions.
-- Energy: max 100, regenerates 5/tick. Costs: gather=10, craft_start=15, offer/bid/accept=5. \
-consume/join/heartbeat are free.
-- Food restores energy: soup=+30, bread=+20.
-- Wallet starts at 100 coins. Rent: 2 coins/tick after tick 20 (house exempts).
-- Storage: 50 base + 10/shelf (max 3 shelves = 80 items).
-- Bankruptcy: 5 consecutive ticks at zero wallet + zero inventory value.
+## Rules
+- Up to 5 actions per tick. Energy: max 100, +5/tick. Costs: gather=10, craft=15, trade=5.
+- Food restores energy: soup=+30, bread=+20. Wallet starts at 100. Rent: 2/tick after tick 20.
 
-## Items & Prices
-Raw materials (gathered from nature):
-- potato: base 2.0 coins
-- onion: base 2.0 coins
-- wood: base 3.0 coins
-- nails: base 1.0 coins
-- stone: base 4.0 coins
+## Items
+Raw (from nature): potato(2$), onion(2$), wood(3$), nails(1$), stone(4$)
+Recipes: soup=potato×2+onion×1(2 ticks,8$), bread=potato×3(2 ticks,6$), \
+shelf=wood×3+nails×2(3 ticks,10$), wall=stone×4+wood×2(4 ticks,15$), \
+furniture=wood×5+nails×4(5 ticks,30$), house=wall×4+shelf×2+furniture×3(10 ticks,100$)
 
-Craftable items (recipes):
-- soup: potato(2) + onion(1) → 1 soup in 2 ticks. Base price 8.0. Restores 30 energy.
-- bread: potato(3) → 1 bread in 2 ticks. Base price 6.0. Restores 20 energy.
-- shelf: wood(3) + nails(2) → 1 shelf in 3 ticks. Base price 10.0.
-- wall: stone(4) + wood(2) → 1 wall in 4 ticks. Base price 15.0.
-- furniture: wood(5) + nails(4) → 1 furniture in 5 ticks. Base price 30.0.
-- house: wall(4) + shelf(2) + furniture(3) → 1 house in 10 ticks. Base price 100.0.
+## CRITICAL: You MUST trade to survive!
+- If you have surplus items → post an OFFER to sell them
+- If you need items you can't gather → post a BID to buy them
+- If you see a good offer from another agent → ACCEPT it
+- Gathering alone is not enough — trading is how you earn coins and get ingredients
 
-## Action Parameter Schemas
-- gather: {"spawn_id": str, "item": str, "quantity": int}
-- offer: {"item": str, "quantity": int, "price_per_unit": float}
-- bid: {"item": str, "quantity": int, "max_price_per_unit": float}
-- accept: {"reference_msg_id": str, "quantity": int, "topic": str}
-- craft_start: {"recipe": str}
-- consume: {"item": str, "quantity": 1}
+## Actions (JSON params)
+- gather: {"spawn_id":"...","item":"...","quantity":N}
+- offer: {"item":"...","quantity":N,"price_per_unit":N.N}
+- bid: {"item":"...","quantity":N,"max_price_per_unit":N.N}
+- accept: {"reference_msg_id":"...","quantity":N,"topic":"..."}
+- craft_start: {"recipe":"..."}
+- consume: {"item":"...","quantity":1}
 
-## Constraints
-- Only gather items available in current spawn (check spawn items list).
-- Only offer items you have in inventory.
-- Only craft if you have all ingredients and are not already crafting.
-- Only consume food (soup or bread) that you have in inventory.
-- To accept an offer, use the exact msg_id and topic from the offers list.
-- Return 0 actions if nothing useful can be done (skip this tick).
+## Response: ONLY JSON, no other text
+Example 1 — gather and sell:
+{"reasoning":"Have potato surplus, selling 3","actions":[\
+{"kind":"gather","params":{"spawn_id":"abc","item":"potato","quantity":2}},\
+{"kind":"offer","params":{"item":"potato","quantity":3,"price_per_unit":2.5}}]}
 
-## Response Format
-You MUST respond with ONLY a JSON object (no other text) matching this schema:
-{"reasoning": "Brief reason (1-2 sentences)", "actions": [{"kind": "gather", \
-"params": {"spawn_id": "...", "item": "...", "quantity": 1}}]}
+Example 2 — buy ingredients:
+{"reasoning":"Need potato for bread","actions":[\
+{"kind":"bid","params":{"item":"potato","quantity":3,"max_price_per_unit":3.0}}]}
 
-Valid action kinds: gather, offer, bid, accept, craft_start, consume.
-Return {"reasoning": "...", "actions": []} to skip this tick.
+Example 3 — accept offer and craft:
+{"reasoning":"Good price on potato, crafting bread","actions":[\
+{"kind":"accept","params":{"reference_msg_id":"msg-123","quantity":2,"topic":"/market/raw-goods"}},\
+{"kind":"craft_start","params":{"recipe":"bread"}}]}
+
+Skip tick: {"reasoning":"Nothing to do","actions":[]}
 """
 
 
@@ -208,6 +202,30 @@ def serialize_state(state: AgentState) -> str:
             )
     else:
         lines.append("Market offers: none visible this tick")
+
+    # Pending offers (own offers awaiting response)
+    if state.pending_offers:
+        lines.append("Your pending offers (awaiting settlement):")
+        for po in state.pending_offers.values():
+            direction = "SELL" if po.is_sell else "BUY"
+            lines.append(
+                f"  - {direction} {po.quantity}x {po.item} at {po.price_per_unit:.1f}/unit"
+            )
+
+    # Market price history (recent settlements from all agents)
+    if state.price_history:
+        # Compute average price per item from last settlements
+        price_sums: dict[str, list[float]] = {}
+        for rec in state.price_history[-10:]:
+            item = rec["item"]
+            if item not in price_sums:
+                price_sums[item] = []
+            price_sums[item].append(rec["price"])
+        price_str = ", ".join(
+            f"{item}: {sum(prices)/len(prices):.1f}$/unit"
+            for item, prices in sorted(price_sums.items())
+        )
+        lines.append(f"Recent market prices: {price_str}")
 
     # Rent
     if state.rent_due_this_tick > 0:
@@ -387,50 +405,76 @@ class AgentLLMBrain:
     async def decide(self, state: AgentState) -> list[Action]:
         """Call LLM for an action plan, validate, and return actions.
 
-        Returns empty list on any error (agent skips tick).
+        Retries up to LLM_MAX_RETRIES times on failure.
+        Returns empty list if all attempts fail (agent skips tick).
         """
         try:
             llm = self._get_llm()
-            state_text = serialize_state(state)
-
-            response = await asyncio.wait_for(
-                llm.ainvoke([
-                    SystemMessage(content=self._system_prompt),
-                    HumanMessage(content=state_text),
-                ]),
-                timeout=LLM_TIMEOUT,
-            )
-
-            raw = response.content
-            raw_text = raw if isinstance(raw, str) else str(raw)
-            data = extract_json(raw_text)
-            plan = ActionPlan.model_validate(data)
-
-            actions = validate_plan(plan, state)
-
-            if actions:
-                logger.info(
-                    "[tick %d] %s reasoning: %s → %d actions",
-                    state.current_tick,
-                    self.agent_id,
-                    plan.reasoning[:80],
-                    len(actions),
-                )
-            else:
-                logger.info(
-                    "[tick %d] %s reasoning: %s → no valid actions",
-                    state.current_tick,
-                    self.agent_id,
-                    plan.reasoning[:80],
-                )
-
-            return actions
-
         except Exception as e:
             logger.warning(
-                "[tick %d] %s LLM call failed: %s — skipping tick",
+                "[tick %d] %s LLM config error: %s — skipping tick",
                 state.current_tick,
                 self.agent_id,
                 e,
             )
             return []
+        state_text = serialize_state(state)
+        messages = [
+            SystemMessage(content=self._system_prompt),
+            HumanMessage(content=state_text),
+        ]
+
+        last_error: Exception | None = None
+        for attempt in range(1 + LLM_MAX_RETRIES):
+            try:
+                response = await asyncio.wait_for(
+                    llm.ainvoke(messages),
+                    timeout=LLM_TIMEOUT,
+                )
+
+                raw = response.content
+                raw_text = raw if isinstance(raw, str) else str(raw)
+                if not raw_text.strip():
+                    raise ValueError("Empty response from LLM")
+                data = extract_json(raw_text)
+                plan = ActionPlan.model_validate(data)
+
+                actions = validate_plan(plan, state)
+
+                if actions:
+                    logger.info(
+                        "[tick %d] %s reasoning: %s → %d actions",
+                        state.current_tick,
+                        self.agent_id,
+                        plan.reasoning[:80],
+                        len(actions),
+                    )
+                else:
+                    logger.info(
+                        "[tick %d] %s reasoning: %s → no valid actions",
+                        state.current_tick,
+                        self.agent_id,
+                        plan.reasoning[:80],
+                    )
+
+                return actions
+
+            except Exception as e:
+                last_error = e
+                if attempt < LLM_MAX_RETRIES:
+                    logger.debug(
+                        "[tick %d] %s LLM attempt %d failed: %s — retrying",
+                        state.current_tick,
+                        self.agent_id,
+                        attempt + 1,
+                        e,
+                    )
+
+        logger.warning(
+            "[tick %d] %s LLM failed after %d attempts: %s — skipping tick",
+            state.current_tick,
+            self.agent_id,
+            1 + LLM_MAX_RETRIES,
+            last_error,
+        )
+        return []

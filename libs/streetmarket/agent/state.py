@@ -41,6 +41,7 @@ class ObservedOffer:
     quantity: int
     price_per_unit: float
     is_sell: bool  # True = offer (selling), False = bid (buying)
+    tick: int = 0  # Tick when this offer was observed
 
 
 @dataclass
@@ -63,6 +64,7 @@ class AgentState:
     rent_due_this_tick: float = 0.0
     is_bankrupt: bool = False
     storage_limit: int = 50  # Updated from RENT_DUE messages or shelf count
+    price_history: list[dict] = field(default_factory=list)  # Recent settlement prices
 
     # --- Helpers ---
 
@@ -119,3 +121,21 @@ class AgentState:
     def clear_observed_offers(self) -> None:
         """Clear observed offers — call after decide() processes them."""
         self.observed_offers.clear()
+
+    def expire_old_offers(self, max_age: int = 3) -> None:
+        """Remove offers older than max_age ticks (keep recent ones)."""
+        cutoff = self.current_tick - max_age
+        self.observed_offers = [
+            o for o in self.observed_offers if o.tick >= cutoff
+        ]
+
+    def record_settlement(
+        self, item: str, price_per_unit: float, quantity: int
+    ) -> None:
+        """Record a settlement price for market awareness."""
+        self.price_history.append(
+            {"item": item, "price": price_per_unit, "qty": quantity}
+        )
+        # Keep only last 20 settlements
+        if len(self.price_history) > 20:
+            self.price_history = self.price_history[-20:]

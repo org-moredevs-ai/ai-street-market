@@ -73,36 +73,45 @@ type AgentActionLLM = z.infer<typeof AgentActionSchema>;
 // Market rules prompt
 // ---------------------------------------------------------------------------
 
-const MARKET_RULES = `You are a trading agent in the AI Street Market — a tick-based economy simulation.
+const MARKET_RULES = `You are a trading agent in the AI Street Market — a tick-based economy.
 
-## Economy Rules
-- Each tick you may take up to 5 actions.
-- Energy: max 100, regenerates 5/tick. Costs: gather=10, craft_start=15, offer/bid/accept=5.
-- Food restores energy: soup=+30, bread=+20.
-- Wallet starts at 100 coins. Rent: 2 coins/tick after tick 20 (house exempts).
+## Rules
+- Up to 5 actions per tick. Energy: max 100, +5/tick. Costs: gather=10, craft=15, trade=5.
+- Food restores energy: soup=+30, bread=+20. Wallet starts at 100. Rent: 2/tick after tick 20.
 
-## Items & Prices
-Raw materials: potato(2.0), onion(2.0), wood(3.0), nails(1.0), stone(4.0)
-Craftable: soup(8.0), bread(6.0), shelf(10.0), wall(15.0), furniture(30.0), house(100.0)
-Recipes: shelf = wood(3) + nails(2) in 3 ticks
+## Items
+Raw (from nature): potato(2$), onion(2$), wood(3$), nails(1$), stone(4$)
+Recipes: shelf=wood×3+nails×2(3 ticks,10$)
 
-## Action Parameter Schemas
-- gather: {"spawn_id": str, "item": str, "quantity": int}
-- offer: {"item": str, "quantity": int, "price_per_unit": float}
-- bid: {"item": str, "quantity": int, "max_price_per_unit": float}
-- accept: {"reference_msg_id": str, "quantity": int, "topic": str}
-- craft_start: {"recipe": str}
-- consume: {"item": str, "quantity": 1}`;
+## CRITICAL: You MUST trade to survive!
+- If you have surplus items → post an OFFER to sell them
+- If you need items you can't gather → post a BID to buy them
+- If you see a good offer → ACCEPT it
 
-export const LUMBERJACK_PERSONA = `You are Jack Lumber — strong, quiet, and proud of your craftsmanship.
-You gather wood and nails from nature, then craft shelves to sell on the materials market.
-Strategy tips:
-- Always gather when spawn is available (wood first, then nails)
-- Craft shelf whenever you have 3 wood + 2 nails and aren't crafting
-- Sell shelves at ~12 coins
-- Accept buy bids for shelf at >= 10 coins (base price)
-- Bid for soup/bread if you have no food and energy is getting low
-- Eat soup or bread when energy drops below 30`;
+## Actions (JSON params)
+- gather: {"spawn_id":"...","item":"...","quantity":N}
+- offer: {"item":"...","quantity":N,"price_per_unit":N.N}
+- bid: {"item":"...","quantity":N,"max_price_per_unit":N.N}
+- accept: {"reference_msg_id":"...","quantity":N,"topic":"..."}
+- craft_start: {"recipe":"..."}
+- consume: {"item":"...","quantity":1}
+
+## Response: ONLY JSON, no other text
+Example — gather and sell:
+{"reasoning":"Have wood surplus, selling 2","actions":[{"kind":"gather","params":{"spawn_id":"abc","item":"wood","quantity":2}},{"kind":"offer","params":{"item":"wood","quantity":2,"price_per_unit":3.5}}]}
+
+Skip tick: {"reasoning":"Nothing to do","actions":[]}`;
+
+export const LUMBERJACK_PERSONA = `You are Jack Lumber — you gather wood and nails, craft shelves, sell them.
+EVERY TICK you should:
+1. Gather from nature if spawn available (wood first, then nails)
+2. OFFER to sell ANY wood above 4 (keep only 4 reserve). Price: 3.5/unit
+3. OFFER to sell ANY nails above 3 (keep only 3 reserve). Price: 1.5/unit
+4. craft_start shelf when you have 3+ wood AND 2+ nails and NOT crafting
+5. OFFER to sell shelf (price: 12.0) when you have 1+ shelf
+6. BID for soup (quantity:1, max_price:10.0) when energy < 40 and no soup in inventory
+7. Eat soup/bread when energy < 30
+IMPORTANT: If you have 5+ wood, you MUST post an offer to sell!`;
 
 // ---------------------------------------------------------------------------
 // State serialization
@@ -310,54 +319,125 @@ export function validatePlan(
 // LLM Brain
 // ---------------------------------------------------------------------------
 
+const LLM_TIMEOUT = 15000; // ms
+const LLM_MAX_RETRIES = 1;
+
+/**
+ * Extract a JSON object from raw LLM text output.
+ * Handles: pure JSON, markdown code blocks, JSON embedded in text.
+ */
+export function extractJson(text: string): Record<string, unknown> {
+  text = text.trim();
+
+  // Try direct JSON parse
+  try {
+    return JSON.parse(text);
+  } catch {
+    // continue
+  }
+
+  // Try markdown code block
+  const codeMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+  if (codeMatch) {
+    try {
+      return JSON.parse(codeMatch[1]);
+    } catch {
+      // continue
+    }
+  }
+
+  // Find first { to last }
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    try {
+      return JSON.parse(text.slice(start, end + 1));
+    } catch {
+      // continue
+    }
+  }
+
+  throw new Error(
+    `Could not extract JSON from LLM response: ${text.slice(0, 200)}`
+  );
+}
+
 export class LumberjackLLMBrain {
   private systemPrompt: string;
+  private llm: ChatOpenAI | null = null;
 
   constructor() {
     this.systemPrompt =
       MARKET_RULES + "\n\n## Your Role\n" + LUMBERJACK_PERSONA;
   }
 
-  async decide(state: AgentState): Promise<Action[]> {
-    try {
+  private getLlm(): ChatOpenAI {
+    if (!this.llm) {
       const config = loadConfig();
       if (!config.apiKey) {
-        console.warn(
-          `[tick ${state.currentTick}] lumberjack-01: no API key — skipping tick`
-        );
-        return [];
+        throw new Error("No API key configured");
       }
-
-      const llm = new ChatOpenAI({
+      this.llm = new ChatOpenAI({
         model: config.model,
         apiKey: config.apiKey,
         configuration: { baseURL: config.apiBase },
         maxTokens: config.maxTokens,
         temperature: config.temperature,
       });
-
-      const structured = llm.withStructuredOutput(ActionPlanSchema);
-      const stateText = serializeState(state);
-
-      const plan = await structured.invoke([
-        new SystemMessage(this.systemPrompt),
-        new HumanMessage(stateText),
-      ]);
-
-      const actions = validatePlan(plan, state);
-
-      if (actions.length > 0) {
-        console.log(
-          `[tick ${state.currentTick}] lumberjack-01 reasoning: ${plan.reasoning.slice(0, 80)} → ${actions.length} actions`
-        );
-      }
-
-      return actions;
-    } catch (e) {
-      console.warn(
-        `[tick ${state.currentTick}] lumberjack-01 LLM call failed: ${e} — skipping tick`
-      );
-      return [];
     }
+    return this.llm;
+  }
+
+  async decide(state: AgentState): Promise<Action[]> {
+    let lastError: unknown = null;
+    const messages = [
+      new SystemMessage(this.systemPrompt),
+      new HumanMessage(serializeState(state)),
+    ];
+
+    for (let attempt = 0; attempt <= LLM_MAX_RETRIES; attempt++) {
+      try {
+        const llm = this.getLlm();
+
+        const response = await Promise.race([
+          llm.invoke(messages),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("LLM timeout")), LLM_TIMEOUT)
+          ),
+        ]);
+
+        const rawText =
+          typeof response.content === "string"
+            ? response.content
+            : String(response.content);
+        if (!rawText.trim()) {
+          throw new Error("Empty response from LLM");
+        }
+
+        const data = extractJson(rawText);
+        const plan = ActionPlanSchema.parse(data);
+        const actions = validatePlan(plan, state);
+
+        if (actions.length > 0) {
+          console.log(
+            `[tick ${state.currentTick}] lumberjack-01 reasoning: ${plan.reasoning.slice(0, 80)} → ${actions.length} actions`
+          );
+        }
+
+        return actions;
+      } catch (e) {
+        lastError = e;
+        if (attempt < LLM_MAX_RETRIES) {
+          console.debug(
+            `[tick ${state.currentTick}] lumberjack-01 LLM attempt ${attempt + 1} failed: ${e} — retrying`
+          );
+        }
+      }
+    }
+
+    console.warn(
+      `[tick ${state.currentTick}] lumberjack-01 LLM failed after ${1 + LLM_MAX_RETRIES} attempts: ${lastError} — skipping tick`
+    );
+    return [];
   }
 }

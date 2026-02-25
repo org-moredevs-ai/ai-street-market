@@ -123,9 +123,11 @@ class TradingAgent(ABC):
                     },
                 )
             )
+            # Immediate heartbeat so viewers get wallet info right away
+            await self._execute_action(Action(kind=ActionKind.HEARTBEAT))
 
         # Auto-heartbeat
-        if self._state.needs_heartbeat(self.HEARTBEAT_INTERVAL):
+        elif self._state.needs_heartbeat(self.HEARTBEAT_INTERVAL):
             await self._execute_action(Action(kind=ActionKind.HEARTBEAT))
 
         # Auto-craft-complete if crafting job is done
@@ -142,8 +144,8 @@ class TradingAgent(ABC):
 
         # Run strategy
         actions = await self.decide(self._state)
-        # Clear observed offers after decide() has processed them
-        self._state.clear_observed_offers()
+        # Expire old offers (keep offers from the last 3 ticks for retries)
+        self._state.expire_old_offers(max_age=3)
         for action in actions:
             if self._state.remaining_actions(self.MAX_ACTIONS_PER_TICK) <= 0:
                 logger.debug("[tick %d] %s: action limit reached", tick, self.AGENT_ID)
@@ -201,6 +203,7 @@ class TradingAgent(ABC):
                     quantity=payload.quantity,
                     price_per_unit=payload.price_per_unit,
                     is_sell=True,
+                    tick=self._state.current_tick,
                 )
             )
         elif envelope.type == MessageType.BID:
@@ -213,10 +216,18 @@ class TradingAgent(ABC):
                     quantity=payload.quantity,
                     price_per_unit=payload.max_price_per_unit,
                     is_sell=False,
+                    tick=self._state.current_tick,
                 )
             )
         elif envelope.type == MessageType.SETTLEMENT:
             payload = Settlement.model_validate(envelope.payload)
+            # Record all settlements for market awareness (even other agents')
+            ppu = (
+                payload.total_price / payload.quantity
+                if payload.quantity > 0
+                else 0.0
+            )
+            self._state.record_settlement(payload.item, ppu, payload.quantity)
             if payload.buyer == self.AGENT_ID:
                 self._state.wallet -= payload.total_price
                 self._state.add_inventory(payload.item, payload.quantity)
