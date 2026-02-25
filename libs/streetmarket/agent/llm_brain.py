@@ -30,7 +30,8 @@ logger = logging.getLogger(__name__)
 # Timeout for LLM calls (seconds). If exceeded, agent skips the tick.
 LLM_TIMEOUT = 15.0
 # Number of retries on LLM failure before giving up.
-LLM_MAX_RETRIES = 1
+# Set to 0 for free-tier models (tight rate limits); increase for paid models.
+LLM_MAX_RETRIES = 0
 
 
 # ---------------------------------------------------------------------------

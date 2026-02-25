@@ -12,6 +12,7 @@ class ChefAgent(TradingAgent):
     AGENT_ID = "chef-01"
     AGENT_NAME = "Chef Clara"
     AGENT_DESCRIPTION = "Buys potato and onion, crafts soup, sells on the food market"
+    DECIDE_OFFSET = 1  # Ticks 1, 7, 13, ...
 
     def __init__(self, nats_url: str = "nats://localhost:4222") -> None:
         super().__init__(nats_url)

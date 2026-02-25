@@ -214,6 +214,7 @@ function handleMarketMessage(envelope: Envelope): void {
       quantity: envelope.payload.quantity as number,
       pricePerUnit: envelope.payload.price_per_unit as number,
       isSell: true,
+      tick: state.currentTick,
     });
   } else if (envelope.type === MessageType.BID) {
     state.observedOffers.push({
@@ -223,6 +224,7 @@ function handleMarketMessage(envelope: Envelope): void {
       quantity: envelope.payload.quantity as number,
       pricePerUnit: envelope.payload.max_price_per_unit as number,
       isSell: false,
+      tick: state.currentTick,
     });
   } else if (envelope.type === MessageType.SETTLEMENT) {
     const p = envelope.payload;
@@ -257,13 +259,20 @@ async function onTick(tickNumber: number): Promise<void> {
     });
   }
 
-  // Run strategy (LLM-powered)
-  const actions = await llmBrain.decide(state);
-  // Clear observed offers after decide() has processed them
-  state.observedOffers = [];
-  for (const action of actions) {
-    if (remainingActions(state) <= 0) break;
-    await executeAction(action);
+  // Run strategy (LLM-powered) — staggered to avoid rate limits
+  // With 6 agents and interval=6, exactly 1 agent decides per tick
+  const DECIDE_INTERVAL = 6;
+  const DECIDE_OFFSET = 5; // lumberjack is offset 5 (ticks 5, 11, 17, ...)
+  if (tickNumber % DECIDE_INTERVAL === DECIDE_OFFSET) {
+    const actions = await llmBrain.decide(state);
+    // Expire old offers (keep last 5 ticks)
+    state.observedOffers = state.observedOffers.filter(
+      (o) => o.tick >= tickNumber - 5
+    );
+    for (const action of actions) {
+      if (remainingActions(state) <= 0) break;
+      await executeAction(action);
+    }
   }
 }
 

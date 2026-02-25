@@ -19,8 +19,8 @@ from streetmarket.agent.llm_config import LLMConfig
 
 logger = logging.getLogger(__name__)
 
-# How often (in ticks) to query the LLM
-LLM_CALL_INTERVAL = 5
+# How often (in ticks) to query the LLM — 10 ticks to stay under rate limits
+LLM_CALL_INTERVAL = 10
 LLM_TIMEOUT = 15.0
 
 

@@ -16,6 +16,7 @@ export interface ObservedOffer {
   quantity: number;
   pricePerUnit: number;
   isSell: boolean;
+  tick: number;
 }
 
 export interface AgentState {

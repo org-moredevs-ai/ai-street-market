@@ -320,7 +320,8 @@ export function validatePlan(
 // ---------------------------------------------------------------------------
 
 const LLM_TIMEOUT = 15000; // ms
-const LLM_MAX_RETRIES = 1;
+// Set to 0 for free-tier models (tight rate limits); increase for paid models.
+const LLM_MAX_RETRIES = 0;
 
 /**
  * Extract a JSON object from raw LLM text output.

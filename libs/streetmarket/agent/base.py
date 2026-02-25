@@ -44,6 +44,11 @@ class TradingAgent(ABC):
     AGENT_DESCRIPTION: str = ""
     MAX_ACTIONS_PER_TICK: int = 5
     HEARTBEAT_INTERVAL: int = 5
+    # LLM rate-limit stagger: agent only calls LLM every DECIDE_INTERVAL ticks.
+    # Combined with DECIDE_OFFSET, distributes LLM calls across ticks.
+    # With 6 agents and interval=6: exactly 1 agent decides per tick.
+    DECIDE_INTERVAL: int = 6
+    DECIDE_OFFSET: int = 0  # Set per-agent: 0,1,2,3,4,5
 
     def __init__(self, nats_url: str = "nats://localhost:4222") -> None:
         self._client = MarketBusClient(nats_url)
@@ -142,15 +147,23 @@ class TradingAgent(ABC):
                     )
                 )
 
-        # Run strategy
-        actions = await self.decide(self._state)
-        # Expire old offers (keep offers from the last 3 ticks for retries)
-        self._state.expire_old_offers(max_age=3)
-        for action in actions:
-            if self._state.remaining_actions(self.MAX_ACTIONS_PER_TICK) <= 0:
-                logger.debug("[tick %d] %s: action limit reached", tick, self.AGENT_ID)
-                break
-            await self._execute_action(action)
+        # Run strategy (staggered to avoid LLM rate limits)
+        if tick % self.DECIDE_INTERVAL == self.DECIDE_OFFSET:
+            actions = await self.decide(self._state)
+            # Expire old offers (keep offers from the last 5 ticks for retries)
+            self._state.expire_old_offers(max_age=5)
+            for action in actions:
+                if self._state.remaining_actions(self.MAX_ACTIONS_PER_TICK) <= 0:
+                    logger.debug(
+                        "[tick %d] %s: action limit reached", tick, self.AGENT_ID
+                    )
+                    break
+                await self._execute_action(action)
+        else:
+            logger.debug(
+                "[tick %d] %s: skipping LLM (stagger offset %d/%d)",
+                tick, self.AGENT_ID, self.DECIDE_OFFSET, self.DECIDE_INTERVAL,
+            )
 
     async def _on_nature(self, envelope: Envelope) -> None:
         """Handle SPAWN, GATHER_RESULT, and NATURE_EVENT messages."""

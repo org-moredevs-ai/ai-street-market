@@ -12,6 +12,7 @@ class MasonAgent(TradingAgent):
     AGENT_ID = "mason-01"
     AGENT_NAME = "Mason Pete"
     AGENT_DESCRIPTION = "Gathers stone, buys wood, crafts walls for the market"
+    DECIDE_OFFSET = 3  # Ticks 3, 9, 15, ...
 
     def __init__(self, nats_url: str = "nats://localhost:4222") -> None:
         super().__init__(nats_url)
