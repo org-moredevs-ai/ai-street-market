@@ -1,6 +1,7 @@
 """AgentLLMBrain — shared LLM decision engine for all trading agents.
 
-Uses LangChain/LangGraph + OpenRouter for structured decision-making.
+Uses LangChain + OpenRouter for decision-making with manual JSON parsing.
+This approach works with ANY model on OpenRouter (no function-calling required).
 Each agent provides a persona; the brain handles the LLM call, validation,
 and error recovery.
 """
@@ -8,7 +9,9 @@ and error recovery.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -26,6 +29,46 @@ logger = logging.getLogger(__name__)
 
 # Timeout for LLM calls (seconds). If exceeded, agent skips the tick.
 LLM_TIMEOUT = 15.0
+
+
+# ---------------------------------------------------------------------------
+# JSON extraction from raw LLM text
+# ---------------------------------------------------------------------------
+
+
+def extract_json(text: str) -> dict[str, Any]:
+    """Extract a JSON object from LLM text output.
+
+    Handles: pure JSON, markdown code blocks, JSON embedded in text,
+    and reasoning models that emit thinking before the JSON.
+    """
+    text = text.strip()
+
+    # Try direct JSON parse
+    try:
+        return json.loads(text)  # type: ignore[no-any-return]
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Try extracting from markdown code block
+    match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(1))  # type: ignore[no-any-return]
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Find first { to last }
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            return json.loads(text[start : end + 1])  # type: ignore[no-any-return]
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    raise ValueError(f"Could not extract JSON from LLM response: {text[:200]}")
+
 
 # ---------------------------------------------------------------------------
 # Structured output schema
@@ -101,6 +144,14 @@ Craftable items (recipes):
 - Only consume food (soup or bread) that you have in inventory.
 - To accept an offer, use the exact msg_id and topic from the offers list.
 - Return 0 actions if nothing useful can be done (skip this tick).
+
+## Response Format
+You MUST respond with ONLY a JSON object (no other text) matching this schema:
+{"reasoning": "Brief reason (1-2 sentences)", "actions": [{"kind": "gather", \
+"params": {"spawn_id": "...", "item": "...", "quantity": 1}}]}
+
+Valid action kinds: gather, offer, bid, accept, craft_start, consume.
+Return {"reasoning": "...", "actions": []} to skip this tick.
 """
 
 
@@ -308,7 +359,8 @@ def validate_plan(plan: ActionPlan, state: AgentState) -> list[Action]:
 class AgentLLMBrain:
     """LLM-powered decision engine for a trading agent.
 
-    Uses LangChain ChatOpenAI (OpenRouter-compatible) with structured output.
+    Uses LangChain ChatOpenAI (OpenRouter-compatible) with manual JSON parsing.
+    This works with ANY model — no function-calling or JSON-mode required.
     The LLM client is lazily created on first call and reused across ticks.
     On any LLM failure, returns empty actions (agent skips tick).
     """
@@ -317,21 +369,20 @@ class AgentLLMBrain:
         self.agent_id = agent_id
         self.persona = persona
         self._system_prompt = MARKET_RULES + "\n\n## Your Role\n" + persona
-        self._structured: Any | None = None
+        self._llm: ChatOpenAI | None = None
 
-    def _get_structured(self) -> Any:
-        """Lazily create and cache the structured LLM client."""
-        if self._structured is None:
+    def _get_llm(self) -> ChatOpenAI:
+        """Lazily create and cache the LLM client."""
+        if self._llm is None:
             config = LLMConfig.for_agent(self.agent_id)
-            llm = ChatOpenAI(
+            self._llm = ChatOpenAI(
                 model=config.model,
                 api_key=config.api_key,  # type: ignore[arg-type]
                 base_url=config.api_base,
                 max_tokens=config.max_tokens,  # type: ignore[call-arg]
                 temperature=config.temperature,
             )
-            self._structured = llm.with_structured_output(ActionPlan)
-        return self._structured
+        return self._llm
 
     async def decide(self, state: AgentState) -> list[Action]:
         """Call LLM for an action plan, validate, and return actions.
@@ -339,16 +390,21 @@ class AgentLLMBrain:
         Returns empty list on any error (agent skips tick).
         """
         try:
-            structured = self._get_structured()
+            llm = self._get_llm()
             state_text = serialize_state(state)
 
-            plan: ActionPlan = await asyncio.wait_for(
-                structured.ainvoke([
+            response = await asyncio.wait_for(
+                llm.ainvoke([
                     SystemMessage(content=self._system_prompt),
                     HumanMessage(content=state_text),
                 ]),
                 timeout=LLM_TIMEOUT,
             )
+
+            raw = response.content
+            raw_text = raw if isinstance(raw, str) else str(raw)
+            data = extract_json(raw_text)
+            plan = ActionPlan.model_validate(data)
 
             actions = validate_plan(plan, state)
 

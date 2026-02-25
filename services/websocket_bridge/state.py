@@ -73,6 +73,9 @@ class BridgeState:
             joined_tick=tick,
         )
         self.agent_last_seen[agent_id] = tick
+        # Initialize wallet to starting amount (Banker grants 100.0 on join)
+        if agent_id not in self.agent_wallets:
+            self.agent_wallets[agent_id] = 100.0
 
     def on_energy_update(self, payload: dict) -> None:
         """Overwrite all energy levels."""

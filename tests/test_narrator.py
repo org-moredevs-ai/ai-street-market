@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -10,7 +11,6 @@ from streetmarket import MarketWeather
 from services.town_crier.narrator import (
     SYSTEM_PROMPT,
     NarrationResult,
-    NarrationSchema,
     Narrator,
 )
 
@@ -235,15 +235,15 @@ class TestGenerateNarration:
     async def test_generate_with_llm_success(self) -> None:
         narrator = Narrator()
 
-        mock_result = NarrationSchema(
-            headline="Hear ye!",
-            body="The market thrives.",
-            predictions=None,
-            drama_level=3,
-        )
-        mock_structured = AsyncMock(return_value=mock_result)
-        mock_llm = MagicMock()
-        mock_llm.with_structured_output.return_value = MagicMock(ainvoke=mock_structured)
+        result_data = {
+            "headline": "Hear ye!",
+            "body": "The market thrives.",
+            "predictions": None,
+            "drama_level": 3,
+        }
+        mock_msg = MagicMock()
+        mock_msg.content = json.dumps(result_data)
+        mock_llm = MagicMock(ainvoke=AsyncMock(return_value=mock_msg))
 
         env = {
             "OPENROUTER_API_KEY": "sk-or-test",
@@ -261,9 +261,7 @@ class TestGenerateNarration:
     async def test_generate_llm_error_falls_back(self) -> None:
         narrator = Narrator()
 
-        mock_structured = AsyncMock(side_effect=RuntimeError("API down"))
-        mock_llm = MagicMock()
-        mock_llm.with_structured_output.return_value = MagicMock(ainvoke=mock_structured)
+        mock_llm = MagicMock(ainvoke=AsyncMock(side_effect=RuntimeError("API down")))
 
         env = {
             "OPENROUTER_API_KEY": "sk-or-test",

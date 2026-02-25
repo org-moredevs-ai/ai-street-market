@@ -1,5 +1,6 @@
 """Tests for the Agent LLM Brain — all LLM calls are mocked."""
 
+import json
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -11,6 +12,7 @@ from streetmarket.agent.llm_brain import (
     ActionPlan,
     AgentAction,
     AgentLLMBrain,
+    extract_json,
     serialize_state,
     validate_action,
     validate_plan,
@@ -443,12 +445,16 @@ class TestAgentLLMBrain:
         return AgentLLMBrain("farmer-01", "You are Farmer Joe.")
 
     def _inject_mock(self, brain, mock_plan=None, side_effect=None):
-        """Inject a mock structured client into the brain's cache."""
+        """Inject a mock LLM client that returns JSON text."""
         if side_effect:
-            mock_ainvoke = AsyncMock(side_effect=side_effect)
+            mock_response = AsyncMock(side_effect=side_effect)
         else:
-            mock_ainvoke = AsyncMock(return_value=mock_plan)
-        brain._structured = MagicMock(ainvoke=mock_ainvoke)
+            # Convert ActionPlan to JSON text as the LLM would return
+            plan_json = mock_plan.model_dump_json() if mock_plan else "{}"
+            mock_msg = MagicMock()
+            mock_msg.content = plan_json
+            mock_response = AsyncMock(return_value=mock_msg)
+        brain._llm = MagicMock(ainvoke=mock_response)
 
     async def test_decide_calls_llm_and_returns_actions(
         self, brain, basic_state, env_vars,
@@ -474,7 +480,7 @@ class TestAgentLLMBrain:
     async def test_decide_returns_empty_on_config_error(
         self, brain, basic_state,
     ):
-        # No OPENROUTER_API_KEY set — _get_structured raises
+        # No OPENROUTER_API_KEY set — _get_llm raises
         with patch.dict(os.environ, {}, clear=True):
             actions = await brain.decide(basic_state)
         assert actions == []
@@ -515,15 +521,42 @@ class TestAgentLLMBrain:
         actions = await brain.decide(basic_state)
         assert actions == []
 
+    async def test_decide_handles_markdown_wrapped_json(
+        self, brain, basic_state, env_vars,
+    ):
+        """LLMs sometimes wrap JSON in markdown code blocks."""
+        plan_data = {"reasoning": "Gathering", "actions": [
+            {"kind": "gather", "params": _GATHER_PARAMS},
+        ]}
+        mock_msg = MagicMock()
+        mock_msg.content = f"```json\n{json.dumps(plan_data)}\n```"
+        brain._llm = MagicMock(ainvoke=AsyncMock(return_value=mock_msg))
+
+        actions = await brain.decide(basic_state)
+        assert len(actions) == 1
+        assert actions[0].kind == ActionKind.GATHER
+
+    async def test_decide_handles_text_before_json(
+        self, brain, basic_state, env_vars,
+    ):
+        """Reasoning models may emit thinking text before JSON."""
+        plan_data = {"reasoning": "test", "actions": []}
+        mock_msg = MagicMock()
+        mock_msg.content = f"Let me think about this...\n\n{json.dumps(plan_data)}"
+        brain._llm = MagicMock(ainvoke=AsyncMock(return_value=mock_msg))
+
+        actions = await brain.decide(basic_state)
+        assert actions == []  # empty plan, no error
+
     async def test_client_cached_across_calls(
         self, brain, basic_state, env_vars,
     ):
         """The LLM client should be created once and reused."""
         plan = ActionPlan(reasoning="test", actions=[])
-        mock_llm = MagicMock()
-        mock_llm.with_structured_output.return_value = MagicMock(
-            ainvoke=AsyncMock(return_value=plan),
-        )
+        plan_json = plan.model_dump_json()
+        mock_msg = MagicMock()
+        mock_msg.content = plan_json
+        mock_llm = MagicMock(ainvoke=AsyncMock(return_value=mock_msg))
 
         with patch(
             "streetmarket.agent.llm_brain.ChatOpenAI", return_value=mock_llm,
@@ -540,6 +573,50 @@ class TestAgentLLMBrain:
 # ---------------------------------------------------------------------------
 
 
+class TestExtractJson:
+    def test_pure_json(self):
+        data = extract_json('{"reasoning": "test", "actions": []}')
+        assert data["reasoning"] == "test"
+
+    def test_markdown_code_block(self):
+        text = '```json\n{"reasoning": "test", "actions": []}\n```'
+        data = extract_json(text)
+        assert data["reasoning"] == "test"
+
+    def test_markdown_code_block_no_lang(self):
+        text = '```\n{"reasoning": "test", "actions": []}\n```'
+        data = extract_json(text)
+        assert data["reasoning"] == "test"
+
+    def test_text_before_json(self):
+        text = 'Let me think...\n\n{"reasoning": "test", "actions": []}'
+        data = extract_json(text)
+        assert data["reasoning"] == "test"
+
+    def test_text_around_json(self):
+        text = 'Here is the result:\n{"reasoning": "test", "actions": []}\nDone!'
+        data = extract_json(text)
+        assert data["reasoning"] == "test"
+
+    def test_whitespace_padding(self):
+        text = '  \n  {"reasoning": "test", "actions": []}  \n  '
+        data = extract_json(text)
+        assert data["reasoning"] == "test"
+
+    def test_invalid_json_raises(self):
+        with pytest.raises(ValueError, match="Could not extract JSON"):
+            extract_json("This is not JSON at all")
+
+    def test_empty_string_raises(self):
+        with pytest.raises(ValueError, match="Could not extract JSON"):
+            extract_json("")
+
+    def test_nested_json(self):
+        text = '{"spawns": {"potato": 20}, "event": null}'
+        data = extract_json(text)
+        assert data["spawns"]["potato"] == 20
+
+
 class TestMarketRules:
     def test_market_rules_contains_key_info(self):
         assert "gather" in MARKET_RULES
@@ -552,6 +629,10 @@ class TestMarketRules:
         assert "soup" in MARKET_RULES
         assert "house" in MARKET_RULES
         assert "energy" in MARKET_RULES.lower()
+
+    def test_market_rules_contains_json_format(self):
+        assert "JSON" in MARKET_RULES
+        assert "reasoning" in MARKET_RULES
 
     def test_valid_kinds_complete(self):
         assert VALID_KINDS == {"gather", "offer", "bid", "accept", "craft_start", "consume"}

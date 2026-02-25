@@ -1,6 +1,6 @@
 """Narrator — LLM-powered narrative generation for the Town Crier.
 
-Uses LangChain/OpenRouter for structured narration output.
+Uses LangChain/OpenRouter with manual JSON parsing (works with ANY model).
 LLM is always on — there is no toggle. Falls back to deterministic
 summaries only on runtime errors (not by configuration).
 """
@@ -15,6 +15,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
+from streetmarket.agent.llm_brain import extract_json
 from streetmarket.agent.llm_config import LLMConfig
 from streetmarket.models.messages import MarketWeather
 
@@ -33,7 +34,13 @@ SYSTEM_PROMPT = (
     "- Make bold predictions (you're often wrong, and that's entertaining)\n"
     "- Keep it fun, dramatic, and opinionated\n"
     "- Use financial jargon mixed with medieval expressions\n"
-    "- Never break character"
+    "- Never break character\n\n"
+    "You MUST respond with ONLY a JSON object (no other text) matching this schema:\n"
+    '{"headline": "Punchy one-liner (max 100 chars)", '
+    '"body": "2-4 paragraph narration (max 500 chars)", '
+    '"predictions": "Optional predictions or null", '
+    '"drama_level": 1}'
+    "\ndrama_level: 1=quiet, 3=interesting, 5=explosive"
 )
 
 
@@ -99,16 +106,20 @@ class Narrator:
             max_tokens=config.max_tokens,  # type: ignore[call-arg]
             temperature=config.temperature,
         )
-        structured = llm.with_structured_output(NarrationSchema)
         prompt = self._build_prompt(summary, weather)
 
-        result: NarrationSchema = await asyncio.wait_for(
-            structured.ainvoke([  # type: ignore[arg-type]
+        response = await asyncio.wait_for(
+            llm.ainvoke([
                 SystemMessage(content=SYSTEM_PROMPT),
                 HumanMessage(content=prompt),
             ]),
             timeout=LLM_TIMEOUT,
         )
+
+        raw = response.content
+        raw_text = raw if isinstance(raw, str) else str(raw)
+        data = extract_json(raw_text)
+        result = NarrationSchema.model_validate(data)
 
         return NarrationResult(
             headline=result.headline[:100],

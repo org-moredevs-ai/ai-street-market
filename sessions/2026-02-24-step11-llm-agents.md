@@ -3,7 +3,7 @@
 **Date:** 2026-02-24
 **Status:** COMPLETED
 **Branch:** main
-**Commit:** (pending — all code written and tested)
+**Commit:** e52758c (main Step 11), plus follow-up fixes
 
 ## Goal
 Make the AI Street Market actually AI-driven:
@@ -76,13 +76,20 @@ Make the AI Street Market actually AI-driven:
 
 3. **Async decide() in integration tests** — After making `decide()` async, the economy integration tests needed async wrappers around the hardcoded strategies for LLM mocking.
 
+4. **World Engine tick loop crash** — `services/world/world.py:115` referenced `self._nature.enabled` which was removed when LLM toggles were eliminated. The AttributeError silently killed the tick loop. Fixed: `elif self._nature.enabled:` → `else:`.
+
+5. **`with_structured_output` incompatible with many OpenRouter models** — nemotron and other models don't support function calling, which `with_structured_output` requires. Replaced with raw LLM call + `extract_json()` utility that parses JSON from any text format (code blocks, embedded in text, etc.). All 3 files updated: llm_brain.py, narrator.py, nature.py.
+
+6. **nemotron model returns empty responses ~60% of the time** — A model reliability issue, not a code bug. The economy handles this gracefully (agents skip ticks). Need to switch to a more reliable model for production.
+
 ## Key decisions
 - OpenRouter as unified LLM gateway (OpenAI-compatible API via `ChatOpenAI`)
-- `with_structured_output(ActionPlan)` for guaranteed valid Pydantic output
+- ~~`with_structured_output(ActionPlan)` for guaranteed valid Pydantic output~~ → Replaced with raw LLM + manual JSON extraction (works with ALL models)
 - Agent skips tick on LLM failure (no hardcoded fallback at runtime)
 - Default model: `nvidia/nemotron-nano-12b-v2-vl:free` (free tier for dev)
 - Per-agent model override via env vars (FARMER_MODEL, etc.)
 - `LLMConfig.for_agent()` and `LLMConfig.for_service()` for configuration
+- `extract_json()` utility handles: pure JSON, markdown code blocks, JSON embedded in text
 
 ## Test Results
 - **876 Python unit tests pass** (no API key needed)

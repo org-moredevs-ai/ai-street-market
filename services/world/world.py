@@ -104,7 +104,7 @@ class WorldEngine:
 
     async def _do_tick(self) -> None:
         """Execute one tick: advance state, regen energy, publish Tick + Spawn + EnergyUpdate."""
-        # LLM nature: call if it's time
+        # LLM nature: call if it's time, otherwise use cached spawns
         if self._nature.should_call_llm(self._state.current_tick + 1):
             llm_spawns = await self._nature.call_llm(
                 self._state.current_tick + 1,
@@ -112,7 +112,7 @@ class WorldEngine:
                 self._state.get_all_energy(),
             )
             self._state._spawn_table = llm_spawns
-        elif self._nature.enabled:
+        else:
             # Use cached spawns (with event effects applied)
             self._state._spawn_table = self._nature.get_spawn_table(
                 self._state.current_tick + 1, self._state.spawn_table

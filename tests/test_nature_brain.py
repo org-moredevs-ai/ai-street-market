@@ -1,5 +1,6 @@
 """Tests for NatureBrain — LLM Nature Intelligence via LangChain/OpenRouter (all mocked)."""
 
+import json
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -248,9 +249,7 @@ class TestProcessLLMResponse:
 class TestCallLLM:
     async def test_llm_error_returns_default(self) -> None:
         brain = NatureBrain()
-        mock_structured = AsyncMock(side_effect=RuntimeError("API error"))
-        mock_llm = MagicMock()
-        mock_llm.with_structured_output.return_value = MagicMock(ainvoke=mock_structured)
+        mock_llm = MagicMock(ainvoke=AsyncMock(side_effect=RuntimeError("API error")))
 
         env = {"OPENROUTER_API_KEY": "test", "DEFAULT_MODEL": "test-model"}
         with patch.dict(os.environ, env, clear=False):
@@ -261,13 +260,13 @@ class TestCallLLM:
 
     async def test_successful_llm_call(self) -> None:
         brain = NatureBrain()
-        mock_result = NatureOutputSchema(
-            spawns={"potato": 30, "onion": 20, "wood": 10, "nails": 10, "stone": 10},
-            event=None,
-        )
-        mock_structured = AsyncMock(return_value=mock_result)
-        mock_llm = MagicMock()
-        mock_llm.with_structured_output.return_value = MagicMock(ainvoke=mock_structured)
+        result_data = {
+            "spawns": {"potato": 30, "onion": 20, "wood": 10, "nails": 10, "stone": 10},
+            "event": None,
+        }
+        mock_msg = MagicMock()
+        mock_msg.content = json.dumps(result_data)
+        mock_llm = MagicMock(ainvoke=AsyncMock(return_value=mock_msg))
 
         env = {"OPENROUTER_API_KEY": "test", "DEFAULT_MODEL": "test-model"}
         with patch.dict(os.environ, env, clear=False):
@@ -279,13 +278,13 @@ class TestCallLLM:
 
     async def test_llm_updates_last_call_tick(self) -> None:
         brain = NatureBrain()
-        mock_result = NatureOutputSchema(
-            spawns={"potato": 20, "onion": 15, "wood": 15, "nails": 10, "stone": 10},
-            event=None,
-        )
-        mock_structured = AsyncMock(return_value=mock_result)
-        mock_llm = MagicMock()
-        mock_llm.with_structured_output.return_value = MagicMock(ainvoke=mock_structured)
+        result_data = {
+            "spawns": {"potato": 20, "onion": 15, "wood": 15, "nails": 10, "stone": 10},
+            "event": None,
+        }
+        mock_msg = MagicMock()
+        mock_msg.content = json.dumps(result_data)
+        mock_llm = MagicMock(ainvoke=AsyncMock(return_value=mock_msg))
 
         env = {"OPENROUTER_API_KEY": "test", "DEFAULT_MODEL": "test-model"}
         with patch.dict(os.environ, env, clear=False):

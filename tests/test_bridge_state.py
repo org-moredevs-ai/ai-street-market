@@ -102,6 +102,17 @@ class TestOnJoin:
         state.on_join({"agent_id": "x"}, tick=1)
         assert state.active_agents["x"].name == "x"
 
+    def test_initializes_wallet_on_join(self) -> None:
+        state = BridgeState()
+        state.on_join({"agent_id": "farmer", "name": "Farmer", "description": ""}, tick=1)
+        assert state.agent_wallets["farmer"] == 100.0
+
+    def test_does_not_overwrite_existing_wallet(self) -> None:
+        state = BridgeState()
+        state.agent_wallets["farmer"] = 85.0
+        state.on_join({"agent_id": "farmer", "name": "Farmer", "description": ""}, tick=1)
+        assert state.agent_wallets["farmer"] == 85.0
+
 
 # ── on_energy_update ─────────────────────────────────────────────────────────
 

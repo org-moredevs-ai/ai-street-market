@@ -14,6 +14,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
+from streetmarket.agent.llm_brain import extract_json
 from streetmarket.agent.llm_config import LLMConfig
 
 logger = logging.getLogger(__name__)
@@ -142,7 +143,6 @@ class NatureBrain:
                 max_tokens=config.max_tokens,  # type: ignore[call-arg]
                 temperature=config.temperature,
             )
-            structured = llm.with_structured_output(NatureOutputSchema)
 
             gather_summary = self._summarize_gathers()
             energy_summary = ", ".join(
@@ -166,15 +166,25 @@ class NatureBrain:
                 f"Based on the economy state, set spawn quantities for the next "
                 f"{LLM_CALL_INTERVAL} ticks. You may adjust quantities up or down "
                 f"(0-50 range). Optionally create a nature event (drought, flood, "
-                f"bonanza, blight, etc.) to add drama. Events should last 3-10 ticks."
+                f"bonanza, blight, etc.) to add drama. Events should last 3-10 ticks.\n\n"
+                f"You MUST respond with ONLY a JSON object (no other text) matching this schema:\n"
+                f'{{"spawns": {{"potato": 20, "onion": 15, "wood": 15, "nails": 10, "stone": 10}}, '
+                f'"event": null}}\n'
+                f'For an event: {{"spawns": {{...}}, "event": {{"title": "Drought", '
+                f'"description": "Water dries up", "duration_ticks": 5}}}}'
             )
 
-            result: NatureOutputSchema = await asyncio.wait_for(
-                structured.ainvoke([  # type: ignore[arg-type]
+            response = await asyncio.wait_for(
+                llm.ainvoke([
                     HumanMessage(content=prompt),
                 ]),
                 timeout=LLM_TIMEOUT,
             )
+
+            raw = response.content
+            raw_text = raw if isinstance(raw, str) else str(raw)
+            data = extract_json(raw_text)
+            result = NatureOutputSchema.model_validate(data)
 
             return self._process_llm_response(result, current_tick)
 
