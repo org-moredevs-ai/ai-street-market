@@ -1,6 +1,6 @@
 """AI Street Market — shared protocol library (v2)."""
 
-from streetmarket.agent import LLMConfig, MarketAgent, extract_json
+from streetmarket.agent import LLMConfig, MarketAgent, TradingAgent, extract_json
 from streetmarket.client.nats_client import MarketBusClient
 from streetmarket.helpers.factory import create_message, parse_message
 from streetmarket.ledger import InMemoryLedger, LedgerInterface
@@ -26,6 +26,7 @@ __all__ = [
     # Agent utilities
     "LLMConfig",
     "MarketAgent",
+    "TradingAgent",
     "extract_json",
     # Models
     "Envelope",

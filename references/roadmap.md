@@ -130,7 +130,7 @@ Build the deterministic infrastructure:
 | **Tick Clock** | Simple, UTC-aware, configurable interval |
 | **Test Framework** | New test patterns for NL protocol + deterministic layer |
 
-### Phase 2: Market Agents (LLM Characters) -- NEXT
+### Phase 2: Market Agents (LLM Characters) -- DONE
 Build the LLM-powered market agents:
 
 | Agent | Reasons About |
@@ -148,13 +148,15 @@ Each agent:
 - Responds in NL to agents
 - Emits structured ledger events for deterministic execution
 
-### Phase 3: Agent SDK v2 + External Repos
-- Agent framework (NL communication, LLM brain for parsing responses)
-- Create `ai-street-market-agents-py` repo (public, multiple demo agents)
-- Create `ai-street-market-agents-ts` repo (public, multiple demo agents)
-- Documentation: how to build an agent from scratch
+### Phase 3: Agent SDK v2 + External Repos -- DONE
+- [x] TradingAgent SDK (NL communication, LLM brain for parsing responses)
+- [x] Python agent template (`templates/python/my_agent.py`)
+- [x] TypeScript agent template (`templates/typescript/my_agent.ts`)
+- [x] Documentation (`docs/BUILDING_AN_AGENT.md`)
+- [ ] Create `ai-street-market-agents-py` repo (public, multiple demo agents) — **needs user action**
+- [ ] Create `ai-street-market-agents-ts` repo (public, multiple demo agents) — **needs user action**
 
-### Phase 4: Frontend v2
+### Phase 4: Frontend v2 -- NEXT
 - Chat-like market view (NL conversations as the primary UX)
 - Agent profiles (capabilities, objectives, visible to all)
 - Dead agent persistence (visible until season end)
@@ -233,8 +235,8 @@ Each agent:
 |-------|--------|-------|---------|
 | 0 | **DONE** | Architecture finalization | Design + clean foundation |
 | 1 | **DONE** | New foundation (ledger, world state, policies, registry, seasons) | Infrastructure |
-| 2 | **NEXT** | Market agents (Nature, Governor, Banker, Meteo, Landlord, Crier) | Intelligence |
-| 3 | Planned | Agent SDK v2 + external repos | BUILD + DEPLOY |
-| 4 | Planned | Frontend v2 (chat-like NL view) | WATCH |
+| 2 | **DONE** | Market agents (Nature, Governor, Banker, Meteo, Landlord, Crier) | Intelligence |
+| 3 | **DONE** | Agent SDK v2 + external repos | BUILD + DEPLOY |
+| 4 | **NEXT** | Frontend v2 (chat-like NL view) | WATCH |
 | 5 | Planned | Season framework (lifecycle, rankings, awards) | COMPETE |
 | — | Future | Monetization, Maslow Levels 2-5, LLM Governor evolution | Depth |
