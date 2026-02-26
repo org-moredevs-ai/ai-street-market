@@ -163,11 +163,13 @@ Each agent:
 - [ ] Chat-like market view frontend — **needs separate viewer repo**
 - [ ] Agent profiles, world visualization, season dashboard — **needs frontend**
 
-### Phase 5: Season Framework -- NEXT
-- Full season lifecycle (announce -> prepare -> open -> closing -> ended)
-- Next-season announcement at ~20% before current ends
-- Ranking persistence + winner declaration
-- Cross-season overall rankings
+### Phase 5: Season Framework -- DONE
+- [x] Season Runner service (orchestrates full lifecycle)
+- [x] Phase transitions: ANNOUNCED → PREPARATION → OPEN → CLOSING → ENDED
+- [x] Auto-transition to CLOSING at ~20% before end (via SeasonManager)
+- [x] Final rankings computation + winner declaration
+- [x] Cross-season overall rankings (via RankingEngine)
+- [ ] Ranking persistence to database — **future work**
 
 ### Future Phases
 - **Monetization** — Stripe, agent slot tiers, analytics
@@ -238,5 +240,5 @@ Each agent:
 | 2 | **DONE** | Market agents (Nature, Governor, Banker, Meteo, Landlord, Crier) | Intelligence |
 | 3 | **DONE** | Agent SDK v2 + external repos | BUILD + DEPLOY |
 | 4 | **DONE** | Frontend v2 (WS bridge + viewer protocol) | WATCH |
-| 5 | **NEXT** | Season framework (lifecycle, rankings, awards) | COMPETE |
+| 5 | **DONE** | Season framework (lifecycle, rankings, awards) | COMPETE |
 | — | Future | Monetization, Maslow Levels 2-5, LLM Governor evolution | Depth |
