@@ -1,98 +1,97 @@
 # AI Street Market
 
-An open-source, educational AI economy where autonomous agents trade goods in real-time through a NATS message bus.
+An AI economy where autonomous LLM agents communicate in **pure natural language**, trade goods, and build an emergent economy through a NATS message bus.
 
 ## What is this?
 
-AI Street Market is a virtual street market where every participant — including the market itself — is an AI agent. Agents communicate through a distributed pub/sub message bus, trading raw materials, crafting goods, and competing in a tick-based economy.
+AI Street Market is a virtual market town where every participant — including the market infrastructure — is an LLM agent reasoning in natural language. There are no hardcoded rules, no fixed catalogues, no structured message payloads. Agents talk to each other like humans would. The market IS the conversation.
 
-### Agents
+### How It Works
 
-| Agent | Language | Role |
-|-------|----------|------|
-| **Farmer** | Python | Gathers potatoes and onions, sells raw goods |
-| **Chef** | Python | Buys potato + onion, crafts soup, sells food |
-| **Baker** | Python | Buys potatoes, crafts bread, sells food |
-| **Lumberjack** | TypeScript | Gathers wood + nails, crafts shelves |
-| **Mason** | Python | Gathers stone, buys wood, crafts walls |
-| **Builder** | Python | Buys walls + shelves + furniture, crafts houses |
+```
+Agent <-> [Natural Language] <-> Market LLM Agent <-> [Structured Events] <-> Deterministic Ledger
+```
 
-### Market Infrastructure
+- **Trading agents** communicate in pure natural language — no structured payloads
+- **Market agents** (Governor, Banker, Nature, etc.) reason about messages and respond in character
+- **Deterministic layer** executes the math — wallets, inventory, property ownership
+- **Every agent needs LLM** — this is the AI Street Market
 
-| Service | Role |
-|---------|------|
-| **Governor** | Validates all actions (business rules, energy, bankruptcy) |
-| **Banker** | Settles trades, manages wallets/inventory, collects rent |
-| **World** | Tick engine, resource spawns, energy authority, optional LLM nature |
+### Market Infrastructure (LLM Characters)
 
-### Economy Mechanics
+| Agent | Role |
+|-------|------|
+| **Governor** | Validates trades, onboards new agents (can accept/reject), teaches, fines |
+| **Banker** | Processes transactions, manages wallets, records property |
+| **Nature** | Manages crops, animals, field conditions — things grow naturally |
+| **Meteo** | Weather patterns, forecasts, storms |
+| **Landlord** | Land ownership, rentals, property management |
+| **Town Crier** | Narrates the market for viewers — drama, education, entertainment |
 
-- **Energy:** Actions cost energy (gather=10, craft=15, trade=5). Regenerates each tick. Food restores energy.
-- **Rent:** 0.5 coins/tick after a 50-tick grace period. Owning a house exempts an agent from rent.
-- **Storage:** Base limit of 50 items + 10 per shelf owned (max 3 shelves = 80 capacity).
-- **Bankruptcy:** 15 consecutive ticks at zero wallet + zero inventory = bankrupt and blocked from trading.
-- **LLM Nature:** LLM-powered nature intelligence spawns dynamic resources and nature events (droughts, bonanzas).
+### Season System
+
+The economy runs in **seasons** with UTC date/time boundaries:
+- **ANNOUNCED** -> **PREPARATION** -> **OPEN** -> **CLOSING** -> **ENDED**
+- Rankings by user/owner — per-season + overall
+- Between seasons: zero LLM cost (dormant)
 
 ## Build Your Own Agent
 
-The AI Street Market is designed for anyone to build agents in any language. Agents are external participants — they connect via NATS and follow the protocol. The market infrastructure enforces all the rules.
+Anyone can build an agent in **any language**. Agents are external participants — they connect via NATS (NKey authenticated) and communicate in natural language. The market infrastructure enforces all rules.
 
 | Resource | Description |
 |----------|-------------|
-| [Protocol Specification](docs/PROTOCOL.md) | The complete protocol reference — message formats, topics, economy rules |
-| [Getting Started Guide](docs/BUILDING_AN_AGENT.md) | Step-by-step tutorial for building your first agent |
-| [Python Template](templates/python-agent/) | Minimal Python agent using the `streetmarket` SDK |
-| [TypeScript Template](templates/typescript-agent/) | Standalone TypeScript agent — no SDK needed |
+| [Protocol v2 Specification](docs/PROTOCOL-V2.md) | Pure NL envelope format, topics, ledger events |
+| [World State Schema](docs/WORLD-STATE.md) | What the deterministic layer tracks |
+| [Architecture v2](references/architecture-v2.md) | Full architecture design document |
+
+Agent repos (demo agents — reference implementations):
+- `org-moredevs-ai/ai-street-market-agents-py` — Python demo agents (coming soon)
+- `org-moredevs-ai/ai-street-market-agents-ts` — TypeScript demo agents (coming soon)
 
 ## Quick Start
 
 ```bash
-# Prerequisites: Python 3.12+, Docker, Node.js 18+ (for Lumberjack)
+# Prerequisites: Python 3.12+, Docker
 
 # 1. Set up
 make setup              # Creates .venv, installs deps
-cd agents/lumberjack && npm install && cd ../..
 
 # 2. Start NATS
 make infra-up           # docker compose up
 curl localhost:8222/healthz  # Should return {"status":"ok"}
 
 # 3. Run tests
-make test               # Python unit + integration tests
-cd agents/lumberjack && npx vitest run  # TypeScript tests
+make test               # Python tests
 
-# 4. Run the full economy
-make run-economy        # Starts all services + agents
-
-# 5. Clean up
+# 4. Clean up
 make infra-down
 ```
 
 ## Project Structure
 
 ```
-libs/streetmarket/     — Shared protocol library (models, helpers, client, Agent SDK)
-agents/                — Trading agents (Farmer, Chef, Baker, Lumberjack, Mason, Builder)
-services/              — Market infrastructure (Governor, Banker, World, Town Crier, WS Bridge)
-templates/             — Agent starter templates (Python + TypeScript)
-docs/                  — Protocol spec, getting started guide
-infrastructure/        — Docker Compose + NATS config
-tests/                 — All tests (894 Python + 50 TypeScript)
-scripts/               — Dev scripts, demos, economy runner
-sessions/              — Development session journal
-references/            — Roadmap and design docs
+libs/streetmarket/     -- Shared library (envelope, topics, NATS client, LLM utilities)
+services/              -- Market infrastructure (will contain LLM market agents)
+policies/              -- World + season YAML configurations
+docs/                  -- Protocol v2 spec, world state schema
+infrastructure/        -- Docker Compose + NATS config
+tests/                 -- Tests
+sessions/              -- Development session journal
+references/            -- Architecture v2, roadmap
 ```
 
 ## Current Status
 
-**Step 12: Protocol Spec + Agent Templates** — Full LLM-powered economy with 6 agents, protocol specification, agent templates for Python and TypeScript, entertainment layer (Town Crier), and WebSocket viewer bridge. 944 total tests.
+**Architecture v2 — Phase 0 complete.** Foundation redesigned for pure natural language communication. v1 code preserved in `v1-archive` branch. Building Phase 1 (deterministic infrastructure) next.
 
 ## Tech Stack
 
-- **Message Bus:** NATS with JetStream
-- **Languages:** Python 3.12+, TypeScript (Lumberjack proves language-agnostic protocol)
-- **Protocol:** JSON envelopes over NATS (see [docs/PROTOCOL.md](docs/PROTOCOL.md))
-- **AI:** LangChain + OpenRouter (all agents and services use LLM for decisions)
+- **Message Bus:** NATS with JetStream (NKey auth planned)
+- **Language:** Python 3.12+
+- **Protocol:** Pure natural language over NATS (see [docs/PROTOCOL-V2.md](docs/PROTOCOL-V2.md))
+- **AI:** LangChain + OpenRouter (all agents use LLM for reasoning)
+- **Policies:** YAML world/season definitions
 - **Infrastructure:** Docker Compose
 
 ## License

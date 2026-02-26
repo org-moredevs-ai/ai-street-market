@@ -1,143 +1,23 @@
-"""AI Street Market — shared protocol library."""
+"""AI Street Market — shared protocol library (v2)."""
 
-from streetmarket.agent import (
-    Action,
-    ActionKind,
-    AgentLLMBrain,
-    AgentState,
-    CraftingJob,
-    LLMConfig,
-    ObservedOffer,
-    PendingOffer,
-    TradingAgent,
-)
+from streetmarket.agent import LLMConfig, extract_json
 from streetmarket.client.nats_client import MarketBusClient
-from streetmarket.helpers.factory import create_message, parse_message, parse_payload
-from streetmarket.helpers.topic_map import topic_for_item
-from streetmarket.helpers.validation import validate_message
-from streetmarket.models.catalogue import (
-    ITEMS,
-    PERISHABLE_ITEMS,
-    RECIPES,
-    CatalogueItem,
-    Recipe,
-    is_valid_item,
-    is_valid_recipe,
-)
-from streetmarket.models.energy import (
-    ACTION_ENERGY_COSTS,
-    FREE_AT_ZERO_ENERGY,
-    MAX_ENERGY,
-    REGEN_PER_TICK,
-    SHELTER_BONUS_REGEN,
-    STARTING_ENERGY,
-)
+from streetmarket.helpers.factory import create_message, parse_message
 from streetmarket.models.envelope import Envelope
-from streetmarket.models.messages import (
-    PAYLOAD_REGISTRY,
-    Accept,
-    Bankruptcy,
-    Bid,
-    Consume,
-    ConsumeResult,
-    Counter,
-    CraftComplete,
-    CraftStart,
-    EconomyHalt,
-    EnergyUpdate,
-    Gather,
-    GatherResult,
-    Heartbeat,
-    ItemSpoiled,
-    Join,
-    MarketWeather,
-    MessageType,
-    Narration,
-    NatureEvent,
-    Offer,
-    RentDue,
-    Settlement,
-    Spawn,
-    Tick,
-    ValidationResult,
-)
-from streetmarket.models.rent import (
-    BANKRUPTCY_GRACE_PERIOD,
-    RENT_GRACE_PERIOD,
-    RENT_PER_TICK,
-    STORAGE_BASE_LIMIT,
-    STORAGE_MAX_SHELVES,
-    STORAGE_PER_SHELF,
-)
 from streetmarket.models.topics import Topics, from_nats_subject, to_nats_subject
 
 __all__ = [
     # Client
     "MarketBusClient",
-    # Agent SDK
-    "Action",
-    "ActionKind",
-    "AgentLLMBrain",
-    "AgentState",
-    "CraftingJob",
+    # Agent utilities
     "LLMConfig",
-    "ObservedOffer",
-    "PendingOffer",
-    "TradingAgent",
+    "extract_json",
     # Models
-    "ACTION_ENERGY_COSTS",
-    "Accept",
-    "BANKRUPTCY_GRACE_PERIOD",
-    "Bankruptcy",
-    "Bid",
-    "CatalogueItem",
-    "Consume",
-    "ConsumeResult",
-    "Counter",
-    "CraftComplete",
-    "CraftStart",
-    "EconomyHalt",
-    "EnergyUpdate",
     "Envelope",
-    "FREE_AT_ZERO_ENERGY",
-    "Gather",
-    "GatherResult",
-    "Heartbeat",
-    "ITEMS",
-    "ItemSpoiled",
-    "Join",
-    "MarketWeather",
-    "MAX_ENERGY",
-    "MessageType",
-    "Narration",
-    "NatureEvent",
-    "Offer",
-    "PAYLOAD_REGISTRY",
-    "PERISHABLE_ITEMS",
-    "RECIPES",
-    "REGEN_PER_TICK",
-    "RENT_GRACE_PERIOD",
-    "RENT_PER_TICK",
-    "Recipe",
-    "RentDue",
-    "SHELTER_BONUS_REGEN",
-    "STARTING_ENERGY",
-    "STORAGE_BASE_LIMIT",
-    "STORAGE_MAX_SHELVES",
-    "STORAGE_PER_SHELF",
-    "Settlement",
-    "Spawn",
-    "Tick",
     "Topics",
-    "ValidationResult",
     # Helpers
     "create_message",
     "from_nats_subject",
-    "is_valid_item",
-    "is_valid_recipe",
     "parse_message",
-    "parse_payload",
     "to_nats_subject",
-    "topic_for_item",
-    "validate_message",
 ]

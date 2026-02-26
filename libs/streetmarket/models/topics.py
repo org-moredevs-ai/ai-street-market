@@ -1,29 +1,27 @@
 """Topic path constants and NATS subject conversion.
 
-The spec uses `/` separators (e.g., `/market/raw-goods`),
-while NATS uses `.` separators (e.g., `market.raw-goods`).
+v2 topics — simplified "streets" of the market.
+The spec uses `/` separators (e.g., `/market/square`),
+while NATS uses `.` separators (e.g., `market.square`).
 This module handles the conversion transparently.
 """
 
 
 class Topics:
-    """Topic path constants matching the spec."""
+    """Topic path constants for the v2 protocol."""
 
-    # World
-    NATURE = "/world/nature"
-
-    # Market
+    # Market (public — trading agents can read and write)
     SQUARE = "/market/square"
-    GOVERNANCE = "/market/governance"
+    TRADES = "/market/trades"
     BANK = "/market/bank"
-    RAW_GOODS = "/market/raw-goods"
-    FOOD = "/market/food"
-    MATERIALS = "/market/materials"
-    HOUSING = "/market/housing"
-    GENERAL = "/market/general"
+    WEATHER = "/market/weather"
+    PROPERTY = "/market/property"
+    NEWS = "/market/news"
 
-    # System
+    # System (infrastructure only — trading agents cannot access)
     TICK = "/system/tick"
+    LEDGER = "/system/ledger"
+    REGISTRY = "/system/registry"
 
     @classmethod
     def agent_inbox(cls, agent_id: str) -> str:
@@ -31,26 +29,36 @@ class Topics:
         return f"/agent/{agent_id}/inbox"
 
     @classmethod
-    def all_topics(cls) -> list[str]:
-        """Return all static topic paths."""
+    def all_market_topics(cls) -> list[str]:
+        """Return all public market topic paths."""
         return [
-            cls.NATURE,
             cls.SQUARE,
-            cls.GOVERNANCE,
+            cls.TRADES,
             cls.BANK,
-            cls.RAW_GOODS,
-            cls.FOOD,
-            cls.MATERIALS,
-            cls.HOUSING,
-            cls.GENERAL,
-            cls.TICK,
+            cls.WEATHER,
+            cls.PROPERTY,
+            cls.NEWS,
         ]
+
+    @classmethod
+    def all_system_topics(cls) -> list[str]:
+        """Return all system topic paths."""
+        return [
+            cls.TICK,
+            cls.LEDGER,
+            cls.REGISTRY,
+        ]
+
+    @classmethod
+    def all_topics(cls) -> list[str]:
+        """Return all topic paths."""
+        return cls.all_market_topics() + cls.all_system_topics()
 
 
 def to_nats_subject(topic: str) -> str:
     """Convert a topic path to a NATS subject.
 
-    `/market/raw-goods` → `market.raw-goods`
+    `/market/square` -> `market.square`
     """
     return topic.lstrip("/").replace("/", ".")
 
@@ -58,6 +66,6 @@ def to_nats_subject(topic: str) -> str:
 def from_nats_subject(subject: str) -> str:
     """Convert a NATS subject back to a topic path.
 
-    `market.raw-goods` → `/market/raw-goods`
+    `market.square` -> `/market/square`
     """
     return "/" + subject.replace(".", "/")

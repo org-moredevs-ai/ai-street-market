@@ -1,4 +1,4 @@
-.PHONY: setup infra-up infra-down test lint proof-of-life governor banker world town-crier ws-bridge farmer chef lumberjack mason baker builder run-economy smoke-test
+.PHONY: setup infra-up infra-down test lint
 
 setup:
 	python3 -m venv .venv
@@ -17,45 +17,3 @@ test:
 lint:
 	.venv/bin/ruff check .
 	.venv/bin/mypy libs/streetmarket
-
-proof-of-life:
-	.venv/bin/python scripts/proof_of_life.py
-
-governor:
-	.venv/bin/python -m services.governor
-
-banker:
-	.venv/bin/python -m services.banker
-
-world:
-	.venv/bin/python -m services.world
-
-town-crier:
-	.venv/bin/python -m services.town_crier
-
-ws-bridge:
-	.venv/bin/python -m services.websocket_bridge
-
-farmer:
-	.venv/bin/python -m agents.farmer
-
-chef:
-	.venv/bin/python -m agents.chef
-
-lumberjack:
-	cd agents/lumberjack && npx tsx src/index.ts
-
-mason:
-	.venv/bin/python -m agents.mason
-
-baker:
-	.venv/bin/python -m agents.baker
-
-builder:
-	.venv/bin/python -m agents.builder
-
-run-economy:
-	.venv/bin/python scripts/run_economy.py
-
-smoke-test:
-	.venv/bin/pytest tests/test_economy_smoke.py -v -m integration

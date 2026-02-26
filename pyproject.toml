@@ -1,18 +1,17 @@
 [project]
 name = "ai-street-market"
-version = "0.1.0"
-description = "An open-source AI economy where autonomous agents trade goods in real-time"
+version = "2.0.0"
+description = "An AI economy where LLM agents communicate in pure natural language"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
     "streetmarket @ file:libs",
-    "anthropic>=0.40",
     "websockets>=14.0",
-    "langgraph>=0.2.0",
     "langchain-openai>=0.3.0",
     "langchain-core>=0.3.0",
     "python-dotenv>=1.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]

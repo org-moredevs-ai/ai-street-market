@@ -1,0 +1,281 @@
+# World Policy: Earth — Medieval Temperate
+# Defines the WORLD that LLM agents operate in.
+# This is NOT a rulebook — it's a description of reality.
+# LLM agents interpret these policies to make decisions.
+
+world:
+  name: "Medieval Market Town"
+  era: "medieval"
+  climate: "temperate"
+  description: >
+    A bustling market town in a temperate region. Rolling farmland surrounds
+    the town, with forests to the north and a stone quarry to the east.
+    A river runs through the western edge, providing water for irrigation.
+    The town square is the heart of commerce — where all traders meet.
+
+# Geography — what exists in this world
+geography:
+  regions:
+    - name: "Town Square"
+      type: "market"
+      description: "The central trading area. Shops, stalls, and the Governor's office."
+      features: ["market_stalls", "town_hall", "bank", "well"]
+
+    - name: "Eastern Farmland"
+      type: "farmland"
+      description: "Fertile fields ideal for root vegetables and grains."
+      crops: ["potato", "onion", "wheat", "carrot"]
+      soil_quality: "good"
+      water_access: "irrigation_canal"
+
+    - name: "Northern Forest"
+      type: "forest"
+      description: "Dense woodland providing timber and game."
+      resources: ["wood", "mushroom", "herbs", "berries"]
+      density: "thick"
+
+    - name: "Eastern Quarry"
+      type: "quarry"
+      description: "An old quarry with exposed stone faces."
+      resources: ["stone", "clay", "iron_ore"]
+      condition: "active"
+
+    - name: "Western River"
+      type: "water"
+      description: "A clean river providing fish, water, and transport."
+      resources: ["fish", "fresh_water", "reeds"]
+      flow: "steady"
+
+    - name: "Southern Pastures"
+      type: "pasture"
+      description: "Open grassland for grazing animals."
+      animals: ["chicken", "sheep", "cow", "horse"]
+      capacity: "moderate"
+
+# Natural resources — what can be found/grown/raised
+resources:
+  crops:
+    potato:
+      growing_time: "8-12 ticks depending on conditions"
+      needs: ["soil", "water", "mild_temperature"]
+      yield: "10-30 per field per harvest"
+      season: "spring through autumn"
+      perishable: true
+      shelf_life: "80-100 ticks"
+
+    onion:
+      growing_time: "6-10 ticks"
+      needs: ["soil", "water"]
+      yield: "8-20 per field"
+      season: "spring through autumn"
+      perishable: true
+      shelf_life: "60-80 ticks"
+
+    wheat:
+      growing_time: "12-18 ticks"
+      needs: ["soil", "water", "sunlight"]
+      yield: "15-40 per field"
+      season: "spring and summer"
+      perishable: false
+      notes: "Can be ground into flour"
+
+    carrot:
+      growing_time: "10-14 ticks"
+      needs: ["soil", "water", "loose_soil"]
+      yield: "10-25 per field"
+      season: "spring through autumn"
+      perishable: true
+      shelf_life: "90-120 ticks"
+
+  gathered:
+    wood:
+      source: "Northern Forest"
+      effort: "moderate physical work"
+      yield: "3-8 per gathering trip"
+      replenishment: "slow — trees take many ticks to regrow"
+      perishable: false
+
+    stone:
+      source: "Eastern Quarry"
+      effort: "heavy physical work"
+      yield: "2-5 per trip"
+      replenishment: "very slow"
+      perishable: false
+
+    fish:
+      source: "Western River"
+      effort: "moderate, requires patience"
+      yield: "1-5 per trip"
+      season: "best in spring and summer"
+      perishable: true
+      shelf_life: "20-30 ticks"
+
+    herbs:
+      source: "Northern Forest"
+      effort: "light"
+      yield: "2-6 per trip"
+      season: "spring and summer"
+      perishable: true
+      shelf_life: "15-25 ticks"
+
+  animals:
+    chicken:
+      products: ["eggs", "meat"]
+      needs: ["shelter", "grain", "water"]
+      yield: "eggs daily, meat if slaughtered"
+
+    sheep:
+      products: ["wool", "meat", "milk"]
+      needs: ["pasture", "water", "shelter_in_winter"]
+      yield: "wool seasonally, milk daily"
+
+    cow:
+      products: ["milk", "meat", "leather"]
+      needs: ["pasture", "water", "large_shelter"]
+      yield: "milk daily, leather/meat if slaughtered"
+
+# Crafting — what can be made from raw materials
+# NOT a fixed recipe list — these are EXAMPLES of what's possible.
+# LLM agents can attempt to craft anything that makes logical sense.
+# Governor decides if a craft attempt is valid.
+crafting:
+  examples:
+    bread:
+      description: "Baked from flour (ground wheat) or potato dough"
+      possible_ingredients: ["wheat", "potato", "water", "salt"]
+      requires: ["oven", "baking_knowledge"]
+      time: "2-4 ticks"
+      notes: "Quality depends on ingredients and skill"
+
+    soup:
+      description: "Cooked from vegetables in water"
+      possible_ingredients: ["potato", "onion", "carrot", "herbs", "water"]
+      requires: ["pot", "fire"]
+      time: "1-3 ticks"
+
+    shelf:
+      description: "Wooden storage furniture"
+      possible_ingredients: ["wood", "nails"]
+      requires: ["carpentry_tools"]
+      time: "2-4 ticks"
+
+    wall:
+      description: "Stone wall for buildings"
+      possible_ingredients: ["stone", "clay", "wood"]
+      requires: ["masonry_knowledge"]
+      time: "3-5 ticks"
+
+    house:
+      description: "A complete dwelling"
+      possible_ingredients: ["walls", "wood", "roof_tiles", "furniture"]
+      requires: ["building_knowledge", "multiple_workers_recommended"]
+      time: "8-15 ticks"
+      notes: "Houses provide shelter, storage, and rent exemption"
+
+# Energy — biological needs
+energy:
+  description: >
+    Agents are like humans — they get tired from work, need food and water
+    to recover, and must rest when exhausted. Energy is not a game mechanic;
+    it's a simulation of biological needs.
+
+  model:
+    max_energy: 100
+    starting_energy: 100
+    rest_recovery: "3-5 per tick of rest"
+    food_recovery:
+      soup: "20-35 energy"
+      bread: "15-25 energy"
+      fish: "15-20 energy"
+      raw_vegetable: "5-10 energy"
+    water_needs: "Agents should drink water periodically"
+
+  work_costs:
+    heavy_physical: "15-25 energy (quarrying, building)"
+    moderate_physical: "8-15 energy (farming, woodcutting)"
+    light_physical: "3-8 energy (trading, walking, crafting)"
+    mental: "2-5 energy (negotiating, planning)"
+
+  consequences:
+    low_energy: "Below 20 — agent moves slowly, makes mistakes"
+    zero_energy: "Agent collapses — can only rest and eat/drink"
+    prolonged_zero: "Extended time at zero energy leads to death (starvation)"
+
+# Economy — financial reality
+economy:
+  currency: "coins"
+  starting_wallet: 100
+  description: >
+    The market uses coins as currency. All transactions are recorded
+    by the Banker. Prices are determined by supply and demand — there
+    are no fixed prices. The market is what agents make of it.
+
+  rent:
+    description: "Non-property-owners pay rent to the market"
+    approximate_rate: "0.3-0.8 coins per tick"
+    grace_period: "First 40-60 ticks are rent-free for newcomers"
+    exemption: "Property owners (house, shop) are exempt"
+
+  bankruptcy:
+    description: "Agents who cannot sustain themselves go bankrupt"
+    trigger: "Extended period with zero coins and unpaid debts"
+    consequence: "Permanent removal from the season"
+    notes: "Inventory is liquidated at reduced prices before declaration"
+
+  storage:
+    base_capacity: 50
+    shelf_bonus: "8-12 additional items per shelf"
+    max_shelves: 3
+    notes: "Excess items must be sold, stored elsewhere, or will spoil"
+
+# Weather patterns — what Meteo can work with
+weather:
+  patterns:
+    spring:
+      common: ["sunny", "mild rain", "breezy"]
+      rare: ["late frost", "flooding"]
+      temperature: "cool to warm"
+
+    summer:
+      common: ["hot and sunny", "occasional thunderstorms"]
+      rare: ["drought", "heatwave"]
+      temperature: "warm to hot"
+
+    autumn:
+      common: ["cool and cloudy", "steady rain", "foggy mornings"]
+      rare: ["early frost", "storms"]
+      temperature: "cool to mild"
+
+    winter:
+      common: ["cold", "snow", "overcast"]
+      rare: ["blizzard", "ice storm"]
+      temperature: "cold to freezing"
+
+  effects:
+    rain: "Good for crops, bad for construction, quarry flooding risk"
+    drought: "Crops suffer, water scarce, fire risk"
+    frost: "Kills unharvested crops, animals need shelter"
+    storm: "Damages buildings, blocks travel, floods low areas"
+
+# Social norms — how this world works
+social:
+  governance: >
+    The Governor maintains order. They can fine agents for bad behavior,
+    reject newcomers who don't fit the world, and settle disputes.
+    The Governor is firm but fair — they want the market to thrive.
+
+  trade_customs: >
+    Haggling is expected. Prices are negotiable. Reputation matters —
+    agents who cheat or default on deals will find it hard to trade.
+    The Banker records all transactions.
+
+  property_rights: >
+    All land initially belongs to the market (managed by the Landlord).
+    Agents can rent or buy plots. Property rights are enforced by the
+    Governor. Building on someone else's land is not allowed.
+
+  newcomers: >
+    New agents are welcome but must present themselves to the Governor.
+    The Governor decides if they fit the world. A nuclear physicist
+    would be rejected; a blacksmith would be welcomed. Agents should
+    have skills relevant to a medieval market economy.

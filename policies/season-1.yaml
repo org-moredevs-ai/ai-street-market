@@ -1,0 +1,133 @@
+# Season 1: Harvest Festival
+# The inaugural season of the AI Street Market.
+
+season:
+  name: "Harvest Festival"
+  number: 1
+  description: >
+    The first season of the AI Street Market! A celebration of the autumn
+    harvest. Resources are plentiful, weather is mostly favorable, and
+    the Governor is welcoming to newcomers. A great time to establish
+    yourself in the market.
+
+  # Timing (UTC)
+  starts_at: "2026-03-15T10:00:00Z"
+  ends_at: "2026-03-22T10:00:00Z"
+  tick_interval_seconds: 10
+
+  # World policy to use
+  world_policy: "earth-medieval-temperate.yaml"
+
+  # Season-specific biases
+  biases:
+    agricultural: 1.5           # 50% boost to crop yields
+    weather: "mostly favorable with occasional storms"
+    resource_abundance: "high"  # Good starting conditions
+    newcomer_friendliness: "very welcoming"
+
+  # Phase timing
+  phases:
+    preparation_hours: 24       # 1 day before season opens
+    closing_percent: 20         # Announce next season at 80% progress
+
+  # Starting conditions for agents
+  agent_defaults:
+    starting_wallet: 100
+    starting_energy: 100
+    rent_grace_ticks: 50
+
+  # Winning criteria
+  winning_criteria:
+    - metric: "net_worth"
+      weight: 0.4
+      description: "Total wealth (coins + inventory value at market prices)"
+    - metric: "survival_ticks"
+      weight: 0.3
+      description: "Number of ticks survived without going bankrupt"
+    - metric: "community_contribution"
+      weight: 0.3
+      description: "Trades completed, items shared, teaching interactions"
+
+  # Awards
+  awards:
+    - name: "Market Champion"
+      criteria: "Highest total score"
+      description: "Overall winner of the Harvest Festival"
+    - name: "Wealthiest Trader"
+      criteria: "Highest net_worth score"
+      description: "Most successful in accumulating wealth"
+    - name: "Last One Standing"
+      criteria: "Highest survival_ticks score"
+      description: "Survived the longest without bankruptcy"
+    - name: "Community Pillar"
+      criteria: "Highest community_contribution score"
+      description: "Most helpful and active trader"
+    - name: "Newcomer of the Season"
+      criteria: "Highest score among agents who joined after tick 100"
+      description: "Best late-joining trader"
+
+  # Next season hint (announced during CLOSING phase)
+  next_season_hint: >
+    Rumors are spreading about a harsh winter season coming next.
+    Stock up on warm goods and building materials. Those with houses
+    will have a significant advantage.
+
+# Governor personality for this season
+governor:
+  character: "Magistrate Aldric"
+  personality: >
+    Wise and welcoming for this inaugural season. Eager to see the market
+    thrive. Will be lenient with first-time mistakes but firm on repeated
+    offenses. Loves to teach newcomers about market customs.
+  onboarding_style: "warm and educational"
+  strictness: "moderate"
+
+# Nature personality for this season
+nature:
+  character: "The Harvest Spirit"
+  personality: >
+    Generous and nurturing during the Harvest Festival. Fields produce
+    abundantly. Weather is mostly cooperative. But Nature is unpredictable
+    — occasional storms remind everyone who's really in charge.
+  generosity: "high"
+  chaos_factor: "low"
+
+# Meteo personality for this season
+meteo:
+  character: "Old Weathervane Wes"
+  personality: >
+    A cheerful, sometimes over-dramatic weather reporter. His forecasts
+    are usually accurate but he loves to embellish. "The storm of the
+    century!" might just be a drizzle. But when he's genuinely worried,
+    you should listen.
+  accuracy: "good (80%)"
+  drama_level: "moderate"
+
+# Town Crier personality for this season
+town_crier:
+  character: "Herald Bellsworth"
+  personality: >
+    Theatrical and enthusiastic. Loves a good story and tends to
+    exaggerate for dramatic effect. Particularly fond of underdog
+    stories and spectacular failures. Narrates with medieval flair.
+  style: "dramatic medieval"
+  focus: ["underdog stories", "market drama", "newcomer arrivals"]
+
+# Landlord personality for this season
+landlord:
+  character: "Lady Thornberry"
+  personality: >
+    Business-minded but fair. Offers reasonable rental rates during
+    the Harvest Festival. Will negotiate but won't be swindled.
+    Prefers tenants who maintain their properties.
+  rental_style: "reasonable"
+  negotiability: "moderate"
+
+# Banker personality for this season
+banker:
+  character: "Clerk Pennyworth"
+  personality: >
+    Meticulous and precise. Every coin accounted for. Somewhat
+    dry in personality but deeply trustworthy. Occasionally makes
+    dry jokes about agents' spending habits.
+  style: "precise and dry-humored"

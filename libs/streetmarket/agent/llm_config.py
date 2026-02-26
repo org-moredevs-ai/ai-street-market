@@ -3,7 +3,7 @@
 ARCHITECTURAL RULE: Every agent is an independent participant. Each agent MUST
 have its own API key and model — no shared fallbacks for credentials.
 
-Required per-agent env vars (e.g., for farmer-01 → prefix FARMER):
+Required per-agent env vars (e.g., for an agent with prefix BAKER):
   - {PREFIX}_API_KEY     — the agent's own LLM API key
   - {PREFIX}_MODEL       — the agent's own model name
 
@@ -12,7 +12,7 @@ Optional per-agent env vars (have safe defaults):
   - {PREFIX}_MAX_TOKENS  — defaults to 400
   - {PREFIX}_TEMPERATURE — defaults to 0.7
 
-Services (Governor, Banker, World, Town Crier) are market infrastructure,
+Services (Governor, Banker, Nature, Meteo, etc.) are market infrastructure,
 not external agents. They use for_service() which allows shared defaults.
 """
 
@@ -20,9 +20,6 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-
-# All known agent prefixes — used by the economy runner to validate config
-AGENT_PREFIXES = ("FARMER", "CHEF", "BAKER", "MASON", "BUILDER", "LUMBERJACK")
 
 
 @dataclass(frozen=True)
@@ -51,6 +48,9 @@ class LLMConfig:
 
         STRICT ISOLATION: Each agent must have its own API key and model.
         No shared fallbacks — {PREFIX}_API_KEY and {PREFIX}_MODEL are required.
+
+        The prefix is derived from the agent_id by taking the first segment
+        before the first hyphen and uppercasing it (e.g., "baker-hugo" -> "BAKER").
 
         Raises KeyError if the agent's API key is not set.
         Raises ValueError if the agent's model is not set.
@@ -89,8 +89,8 @@ class LLMConfig:
     def for_service(cls, service_name: str) -> LLMConfig:
         """Load config for a market infrastructure service.
 
-        Services (World, Town Crier, etc.) are part of the market, not external
-        agents. They may use shared defaults for convenience.
+        Services (Governor, Banker, Nature, Meteo, etc.) are part of the market,
+        not external agents. They may use shared defaults for convenience.
         """
         prefix = service_name.upper().replace("-", "_")
 

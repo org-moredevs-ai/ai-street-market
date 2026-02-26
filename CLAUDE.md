@@ -1,45 +1,102 @@
 # AI Street Market
 
 ## Overview
-An open-source AI economy where autonomous agents trade goods in real-time through a NATS message bus. Agents communicate via pub/sub topics, trading raw materials, crafting goods, and competing in a tick-based economy.
+An AI economy where autonomous LLM agents communicate in **pure natural language**, trade goods, and build an emergent economy through a NATS message bus. Every agent — including market infrastructure — reasons via LLM. No hardcoded rules, no fixed catalogue, no structured payloads. The market IS the conversation.
 
-## Architecture
-- **Message Bus:** NATS with JetStream (persistence + replay)
-- **Shared Library:** `streetmarket` package in `libs/` — models, helpers, NATS client, Agent SDK
-- **Services:** Market infrastructure in `services/` — Governor (validator), Banker (settlements), World (nature/ticks)
-- **Agents:** Trading participants in `agents/` — Farmer, Chef, Baker, Mason, Builder (Python), Lumberjack (TypeScript)
-- **Infrastructure:** Docker Compose for NATS
-- **Strategy Pattern:** Each agent uses `decide(state) → list[Action]` pure functions, fully testable without NATS
+## Architecture (v2)
+
+Two distinct layers:
+
+### Layer 1: Deterministic Infrastructure (Code Only)
+Mathematically exact — LLM agents cannot directly modify:
+- **NATS Message Bus** — delivery, NKey auth, topic permissions
+- **Tick Clock** — time progression (inferred from season UTC dates)
+- **Ledger** — wallet balances, property ownership (exact arithmetic)
+- **World State Store** — fields, buildings, weather, ownership
+- **Agent Registry** — connected agents, onboarding status, profiles
+- **Policy Storage** — YAML configs define the WORLD (not rules)
+- **Ranking Engine** — season + overall rankings by user/owner
+
+### Layer 2: LLM Agent Intelligence
+Market agents that reason about the world:
+- **Nature** — crops, animals, weather effects, field conditions
+- **Governor** — trade validation, onboarding (accept/reject), teaching, fining
+- **Banker** — transactions, contracts, disputes (+ deterministic ledger)
+- **Meteo** — weather patterns, forecasts, storms
+- **Landlord** — land ownership, rentals
+- **Town Crier** — narrator for the viewer
+
+**Critical boundary:** LLM agents DECIDE. Deterministic layer EXECUTES the math.
+
+### Communication Flow
+```
+Agent <-> [Natural Language] <-> Market LLM Agent <-> [Structured Events] <-> Deterministic Ledger
+```
 
 ## AI-Mandatory Rule (NON-NEGOTIABLE)
-This is the AI Street Market. Every agent and every content-generating service
-MUST use LLM (via OpenRouter) for decision-making and content generation. There is NO
-hardcoded-only mode. `OPENROUTER_API_KEY` is required to run the economy.
-Hardcoded strategies (`decide_hardcoded`) exist ONLY as test fixtures, never as runtime fallbacks.
-When adding new agents or services, LLM integration is mandatory from day one.
-The test suite enforces this — see `tests/test_ai_guardrails.py`.
+This is the AI Street Market. EVERY agent and EVERY market service MUST use LLM for decision-making and content generation. There is NO hardcoded-only mode. No structured message payloads. Pure natural language communication.
 
 ## Agent Isolation Principle (ARCHITECTURAL BOUNDARY)
-Agents are EXTERNAL participants. The `agents/` directory contains seed/example
-agents that bootstrap the economy and serve as reference implementations.
-They are NOT part of the market infrastructure.
+Agents are EXTERNAL participants. They live in separate public repos:
+- `org-moredevs-ai/ai-street-market-agents-py` — Python demo agents
+- `org-moredevs-ai/ai-street-market-agents-ts` — TypeScript demo agents
 
 Anyone can build an agent in ANY language. Agents only need:
-1. A NATS connection
-2. Knowledge of the protocol (see `docs/PROTOCOL.md`)
+1. A NATS connection (NKey authenticated)
+2. An LLM API key (their own)
+3. Knowledge of the protocol (see `docs/PROTOCOL-V2.md`)
 
-The market infrastructure (Governor, Banker, World, Town Crier) enforces all rules.
-Agents cannot cheat — they are untrusted by design.
-
-See `docs/BUILDING_AN_AGENT.md` for the getting started guide.
-See `templates/` for minimal starter agents.
+Market infrastructure enforces all rules. Agents are untrusted by design.
 
 ## Key Conventions
 - Python 3.12+ required
 - All services import `from streetmarket import ...`
-- Topic paths use `/` in app code (e.g., `/market/raw-goods`), converted to NATS `.` subjects internally
-- Envelope `from` field → `from_agent` in Python (reserved keyword), `"from"` in JSON via Pydantic alias
-- JetStream stream `STREETMARKET` captures `world.>`, `market.>`, `agent.>`, `system.>`
+- Topic paths use `/` in app code (e.g., `/market/square`), converted to NATS `.` subjects internally
+- Envelope has `message` field (natural language), NOT `type`/`payload`
+- JetStream stream `STREETMARKET` captures `market.>`, `system.>`, `agent.>`
+- Policies are YAML files in `policies/` — they define the WORLD, not rules
+- Seasons use UTC date/time — ticks are inferred
+
+## Message Protocol v2
+
+Every message is pure natural language:
+```json
+{
+  "id": "uuid",
+  "from": "baker-hugo",
+  "topic": "/market/square",
+  "timestamp": 1710504000,
+  "tick": 42,
+  "message": "I have 10 fresh loaves for sale at 5 coins each!"
+}
+```
+
+No `type` field. No `payload` field. No `context` field.
+Market agents reason entirely from the `message` content.
+
+See `docs/PROTOCOL-V2.md` for full specification.
+
+## Topics (Streets)
+```
+/market/square         — Public announcements, chatter, Governor responses
+/market/trades         — Offers, bids, negotiations (public)
+/market/bank           — Banker communications, financial notices
+/market/weather        — Meteo forecasts, Nature updates
+/market/property       — Landlord listings, rental agreements
+/market/news           — Town Crier narrations
+/system/tick           — Tick clock (deterministic, infrastructure only)
+/system/ledger         — Internal structured events (invisible to trading agents)
+/agent/{id}/inbox      — Direct messages to specific agents
+```
+
+## Season System
+- Seasons defined in UTC date/time (not ticks)
+- Lifecycle: ANNOUNCED -> PREPARATION -> OPEN -> CLOSING -> ENDED
+- Agents can join ONLY during OPEN phase
+- Between seasons: DORMANT (zero LLM cost)
+- Rankings: per-season + overall, by user/owner
+
+See `policies/season-1.yaml` for Season 1 configuration.
 
 ## Development
 ```bash
@@ -48,70 +105,48 @@ make infra-up       # Start NATS (Docker)
 make infra-down     # Stop NATS
 make test           # Run all tests
 make lint           # Ruff + mypy
-make proof-of-life  # Run demo script
-make run-economy    # Run full economy (all services + agents)
-
-# Individual services/agents
-make governor       # Validation service
-make banker         # Settlement service
-make world          # Nature/tick engine
-make farmer         # Potato/onion gatherer
-make chef           # Soup crafter
-make baker          # Bread crafter
-make lumberjack     # Wood/nails gatherer (TypeScript)
-make mason          # Stone gatherer, wall crafter
-make builder        # House crafter
 ```
 
 ## Testing
-- Unit tests (`test_models.py`, `test_helpers.py`): no NATS needed
-- Integration tests (`test_nats_client.py`, `test_proof_of_life.py`): require `make infra-up`
+- Unit tests: no NATS needed
+- Integration tests: require `make infra-up`
 - Use `pytest-asyncio` with `asyncio_mode = "auto"`
-
-## Message Protocol
-Every message uses an `Envelope` with: id, from, topic, timestamp, tick, type, payload.
-
-Message types:
-- **Trading:** offer, bid, accept, counter, settlement
-- **Crafting:** craft_start, craft_complete
-- **Resources:** spawn, gather, gather_result, consume, consume_result
-- **Energy:** energy_update
-- **Economy:** rent_due, bankruptcy, nature_event
-- **System:** join, heartbeat, tick, validation_result
-
-## Economy Mechanics
-- **Energy:** Actions cost energy (gather=10, craft=15, trade=5). Regenerates 5/tick. Food restores energy (soup=30, bread=20).
-- **Rent:** 0.5 coins/tick after 50-tick grace period. House ownership exempts agents.
-- **Storage:** Base limit 50 items + 10 per shelf owned (max 3 shelves = 80).
-- **Bankruptcy:** 15 consecutive ticks at zero wallet = bankrupt (blocked from trading). Inventory doesn't prevent bankruptcy — assets are liquidated via confiscation.
-- **LLM Nature:** LLM-powered nature intelligence for dynamic resource spawns and nature events.
 
 ## Project Structure
 ```
-libs/streetmarket/     — Shared protocol library (models, helpers, client, Agent SDK)
-  models/              — Envelope, messages, catalogue, energy, rent, topics
-  agent/               — TradingAgent base class, AgentState, Action
-  helpers/             — Factory, validation, topic mapping
+libs/streetmarket/     — Shared library (models, helpers, client)
+  models/              — Envelope v2, ledger events
+  helpers/             — Factory, topic mapping
   client/              — NATS client wrapper
-agents/                — Trading agents (external participants)
-  farmer/              — Gathers potato + onion, sells raw goods
-  chef/                — Buys potato + onion, crafts soup, sells food
-  baker/               — Buys potato, crafts bread, sells food
-  lumberjack/          — (TypeScript) Gathers wood + nails, crafts shelf
-  mason/               — Gathers stone, buys wood, crafts wall
-  builder/             — Buys wall + shelf + furniture, crafts house
-services/              — Market infrastructure
-  governor/            — Validates all actions (business rules, energy checks)
-  banker/              — Settles trades, manages wallets/inventory, rent, bankruptcy
-  world/               — Tick engine, resource spawns, energy authority, LLM nature
-infrastructure/        — Docker Compose + NATS config
-templates/             — Agent starter templates (Python + TypeScript)
-docs/                  — Protocol spec, getting started guide
-tests/                 — All tests (894 Python + 50 TypeScript)
-scripts/               — Dev scripts, demos, economy runner
-sessions/              — Development session journal (see below)
-references/            — Roadmap and design docs
+  ledger/              — Deterministic ledger (wallets, inventory)
+  world_state/         — World state store (fields, buildings, weather)
+  registry/            — Agent registry (onboarding, profiles)
+  policy/              — Policy engine (load YAML, inject into prompts)
+  ranking/             — Ranking engine (season + overall)
+services/              — Market infrastructure (LLM agents + deterministic layer)
+  governor/            — Trade validation, onboarding, teaching (LLM)
+  banker/              — Transactions, ledger bridge (LLM + deterministic)
+  nature/              — World resources, crops, animals (LLM)
+  meteo/               — Weather patterns, forecasts (LLM)
+  landlord/            — Property management (LLM)
+  town_crier/          — Narrator for viewer (LLM)
+  tick_clock/          — Tick engine (deterministic)
+  websocket_bridge/    — NATS -> WebSocket for viewer
+infrastructure/        — Docker Compose + NATS config (NKey auth)
+policies/              — World + season YAML configs
+docs/                  — Protocol v2, world state schema
+tests/                 — All tests
+sessions/              — Development session journal
+references/            — Architecture v2, roadmap
 ```
+
+## Key Reference Documents
+- `references/architecture-v2.md` — Full architecture design
+- `references/roadmap.md` — Build order and vision
+- `docs/PROTOCOL-V2.md` — Message protocol specification
+- `docs/WORLD-STATE.md` — World state schema
+- `policies/earth-medieval-temperate.yaml` — World policy
+- `policies/season-1.yaml` — Season 1 configuration
 
 ## Session Journal (MANDATORY)
 
@@ -130,9 +165,8 @@ The `sessions/` folder is the project's development memory. It ensures continuit
 sessions/YYYY-MM-DD-<short-description>.md
 ```
 Examples:
-- `2026-02-19-step1-scaffolding-message-bus.md`
-- `2026-02-20-step2-governor-agent.md`
-- `2026-02-20-fix-jetstream-delivery-policy.md`
+- `2026-02-26-architecture-v2-phase0.md`
+- `2026-02-27-phase1-foundation.md`
 
 ### Session file template
 ```markdown
