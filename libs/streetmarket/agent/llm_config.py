@@ -73,9 +73,7 @@ class LLMConfig:
 
         api_base = os.environ.get(f"{prefix}_API_BASE", "")
         if not api_base:
-            api_base = os.environ.get(
-                "OPENROUTER_API_BASE", "https://openrouter.ai/api/v1"
-            )
+            api_base = os.environ.get("OPENROUTER_API_BASE", "https://openrouter.ai/api/v1")
 
         return cls(
             api_key=api_key,
@@ -100,13 +98,9 @@ class LLMConfig:
 
         api_base = os.environ.get(f"{prefix}_API_BASE", "")
         if not api_base:
-            api_base = os.environ.get(
-                "OPENROUTER_API_BASE", "https://openrouter.ai/api/v1"
-            )
+            api_base = os.environ.get("OPENROUTER_API_BASE", "https://openrouter.ai/api/v1")
 
-        model = os.environ.get(
-            f"{prefix}_MODEL", os.environ.get("DEFAULT_MODEL", "")
-        )
+        model = os.environ.get(f"{prefix}_MODEL", os.environ.get("DEFAULT_MODEL", ""))
 
         return cls(
             api_key=api_key,
