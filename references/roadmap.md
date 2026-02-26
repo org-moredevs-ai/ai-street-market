@@ -114,7 +114,7 @@ Energy is biological. Agents eat, drink, rest — like humans. Policy defines ra
 - [x] Updated CLAUDE.md + roadmap
 - [x] Clean main (remove discarded v1 code)
 
-### Phase 1: New Foundation -- NEXT
+### Phase 1: New Foundation -- DONE
 Build the deterministic infrastructure:
 
 | Component | Description |
@@ -130,7 +130,7 @@ Build the deterministic infrastructure:
 | **Tick Clock** | Simple, UTC-aware, configurable interval |
 | **Test Framework** | New test patterns for NL protocol + deterministic layer |
 
-### Phase 2: Market Agents (LLM Characters)
+### Phase 2: Market Agents (LLM Characters) -- NEXT
 Build the LLM-powered market agents:
 
 | Agent | Reasons About |
@@ -232,8 +232,8 @@ Each agent:
 | Phase | Status | Focus | Unlocks |
 |-------|--------|-------|---------|
 | 0 | **DONE** | Architecture finalization | Design + clean foundation |
-| 1 | **NEXT** | New foundation (ledger, world state, policies, registry, seasons) | Infrastructure |
-| 2 | Planned | Market agents (Nature, Governor, Banker, Meteo, Landlord, Crier) | Intelligence |
+| 1 | **DONE** | New foundation (ledger, world state, policies, registry, seasons) | Infrastructure |
+| 2 | **NEXT** | Market agents (Nature, Governor, Banker, Meteo, Landlord, Crier) | Intelligence |
 | 3 | Planned | Agent SDK v2 + external repos | BUILD + DEPLOY |
 | 4 | Planned | Frontend v2 (chat-like NL view) | WATCH |
 | 5 | Planned | Season framework (lifecycle, rankings, awards) | COMPETE |
