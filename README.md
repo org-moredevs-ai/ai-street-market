@@ -28,10 +28,21 @@ AI Street Market is a virtual street market where every participant — includin
 ### Economy Mechanics
 
 - **Energy:** Actions cost energy (gather=10, craft=15, trade=5). Regenerates each tick. Food restores energy.
-- **Rent:** 2 coins/tick after a 20-tick grace period. Owning a house exempts an agent from rent.
+- **Rent:** 0.5 coins/tick after a 50-tick grace period. Owning a house exempts an agent from rent.
 - **Storage:** Base limit of 50 items + 10 per shelf owned (max 3 shelves = 80 capacity).
-- **Bankruptcy:** 5 consecutive ticks at zero wallet + zero inventory = bankrupt and blocked from trading.
-- **LLM Nature:** Optional Claude Haiku integration spawns dynamic resources and nature events (droughts, bonanzas).
+- **Bankruptcy:** 15 consecutive ticks at zero wallet + zero inventory = bankrupt and blocked from trading.
+- **LLM Nature:** LLM-powered nature intelligence spawns dynamic resources and nature events (droughts, bonanzas).
+
+## Build Your Own Agent
+
+The AI Street Market is designed for anyone to build agents in any language. Agents are external participants — they connect via NATS and follow the protocol. The market infrastructure enforces all the rules.
+
+| Resource | Description |
+|----------|-------------|
+| [Protocol Specification](docs/PROTOCOL.md) | The complete protocol reference — message formats, topics, economy rules |
+| [Getting Started Guide](docs/BUILDING_AN_AGENT.md) | Step-by-step tutorial for building your first agent |
+| [Python Template](templates/python-agent/) | Minimal Python agent using the `streetmarket` SDK |
+| [TypeScript Template](templates/typescript-agent/) | Standalone TypeScript agent — no SDK needed |
 
 ## Quick Start
 
@@ -62,9 +73,11 @@ make infra-down
 ```
 libs/streetmarket/     — Shared protocol library (models, helpers, client, Agent SDK)
 agents/                — Trading agents (Farmer, Chef, Baker, Lumberjack, Mason, Builder)
-services/              — Market infrastructure (Governor, Banker, World)
+services/              — Market infrastructure (Governor, Banker, World, Town Crier, WS Bridge)
+templates/             — Agent starter templates (Python + TypeScript)
+docs/                  — Protocol spec, getting started guide
 infrastructure/        — Docker Compose + NATS config
-tests/                 — All tests (631 Python + 22 TypeScript)
+tests/                 — All tests (894 Python + 50 TypeScript)
 scripts/               — Dev scripts, demos, economy runner
 sessions/              — Development session journal
 references/            — Roadmap and design docs
@@ -72,14 +85,14 @@ references/            — Roadmap and design docs
 
 ## Current Status
 
-**Step 8: Level 1 Complete** — Full economy with 6 agents, energy system, rent/bankruptcy, storage limits, and optional LLM-powered nature events. 653 total tests.
+**Step 12: Protocol Spec + Agent Templates** — Full LLM-powered economy with 6 agents, protocol specification, agent templates for Python and TypeScript, entertainment layer (Town Crier), and WebSocket viewer bridge. 944 total tests.
 
 ## Tech Stack
 
 - **Message Bus:** NATS with JetStream
 - **Languages:** Python 3.12+, TypeScript (Lumberjack proves language-agnostic protocol)
-- **Protocol:** Pydantic models + JSON envelopes
-- **AI:** Anthropic Claude (optional, for LLM Nature Intelligence)
+- **Protocol:** JSON envelopes over NATS (see [docs/PROTOCOL.md](docs/PROTOCOL.md))
+- **AI:** LangChain + OpenRouter (all agents and services use LLM for decisions)
 - **Infrastructure:** Docker Compose
 
 ## License

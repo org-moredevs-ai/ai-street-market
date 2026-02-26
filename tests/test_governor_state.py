@@ -3,6 +3,7 @@
 from services.governor.state import (
     HEARTBEAT_TIMEOUT_TICKS,
     MAX_ACTIONS_PER_TICK,
+    SERVICE_IDS,
     GovernorState,
 )
 
@@ -59,6 +60,43 @@ class TestRateLimiting:
         assert state.is_rate_limited("agent-1")
         state.advance_tick(1)
         assert not state.is_rate_limited("agent-1")
+
+    def test_services_exempt_from_rate_limit(self):
+        """Infrastructure services (banker, world, etc.) are never rate-limited."""
+        state = GovernorState()
+        for service_id in SERVICE_IDS:
+            for _ in range(MAX_ACTIONS_PER_TICK + 10):
+                state.record_action(service_id)
+            assert not state.is_rate_limited(service_id), f"{service_id} should be exempt"
+
+    def test_banker_not_rate_limited_after_many_actions(self):
+        """Banker processes many settlements per tick — must not be rate-limited."""
+        state = GovernorState()
+        for _ in range(50):
+            state.record_action("banker")
+        assert not state.is_rate_limited("banker")
+
+    def test_service_ids_contains_all_services(self):
+        """Verify all known service IDs are in the exemption set."""
+        expected = {"banker", "world", "governor", "town_crier", "websocket_bridge"}
+        assert SERVICE_IDS == expected
+
+
+class TestMarketOpen:
+    def test_market_closed_initially(self):
+        state = GovernorState()
+        assert not state.market_open
+
+    def test_market_opens_on_first_tick(self):
+        state = GovernorState()
+        state.advance_tick(1)
+        assert state.market_open
+
+    def test_market_stays_open(self):
+        state = GovernorState()
+        state.advance_tick(1)
+        state.advance_tick(2)
+        assert state.market_open
 
 
 class TestHeartbeats:

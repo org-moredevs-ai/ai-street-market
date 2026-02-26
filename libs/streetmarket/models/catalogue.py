@@ -11,6 +11,7 @@ class CatalogueItem(BaseModel):
     base_price: float = Field(gt=0)
     craftable: bool = False
     energy_restore: float = 0.0
+    spoil_ticks: int | None = None  # None = non-perishable
 
 
 class Recipe(BaseModel):
@@ -27,17 +28,19 @@ class Recipe(BaseModel):
 
 ITEMS: dict[str, CatalogueItem] = {
     # Raw materials (gathered from nature, not craftable)
-    "potato": CatalogueItem(name="potato", category="raw", base_price=2.0),
-    "onion": CatalogueItem(name="onion", category="raw", base_price=2.0),
+    "potato": CatalogueItem(name="potato", category="raw", base_price=2.0, spoil_ticks=100),
+    "onion": CatalogueItem(name="onion", category="raw", base_price=2.0, spoil_ticks=80),
     "wood": CatalogueItem(name="wood", category="raw", base_price=3.0),
     "nails": CatalogueItem(name="nails", category="raw", base_price=1.0),
     "stone": CatalogueItem(name="stone", category="raw", base_price=4.0),
     # Crafted goods
     "soup": CatalogueItem(
-        name="soup", category="food", base_price=8.0, craftable=True, energy_restore=30.0
+        name="soup", category="food", base_price=8.0, craftable=True,
+        energy_restore=30.0, spoil_ticks=150,
     ),
     "bread": CatalogueItem(
-        name="bread", category="food", base_price=6.0, craftable=True, energy_restore=20.0
+        name="bread", category="food", base_price=6.0, craftable=True,
+        energy_restore=20.0, spoil_ticks=180,
     ),
     "shelf": CatalogueItem(
         name="shelf", category="material", base_price=10.0, craftable=True
@@ -99,6 +102,13 @@ RECIPES: dict[str, Recipe] = {
         output_quantity=1,
         ticks=10,
     ),
+}
+
+
+PERISHABLE_ITEMS: dict[str, int] = {
+    name: item.spoil_ticks
+    for name, item in ITEMS.items()
+    if item.spoil_ticks is not None
 }
 
 

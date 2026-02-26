@@ -78,9 +78,13 @@ def apply_regen(state: WorldState) -> dict[str, float]:
     """Apply per-tick energy regen to all agents.
 
     Returns dict of agent_id -> new energy after regen.
+    Bankrupt agents are excluded — they stay at 0.
     """
     result: dict[str, float] = {}
     for agent_id in list(state.get_all_energy().keys()):
+        if state.is_bankrupt(agent_id):
+            result[agent_id] = 0.0
+            continue
         regen = REGEN_PER_TICK
         if state.is_sheltered(agent_id):
             regen += SHELTER_BONUS_REGEN

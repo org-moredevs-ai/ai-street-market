@@ -114,7 +114,8 @@ class TestFreeAtZeroEnergy:
         assert errors == []
 
     def test_join_allowed_at_zero_energy(self):
-        state = GovernorState(current_tick=5)
+        state = GovernorState()
+        state.advance_tick(5)  # Opens market
         state.update_energy({"new-agent": 0.0})
         env = _make_envelope(
             MessageType.JOIN,

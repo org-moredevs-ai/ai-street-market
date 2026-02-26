@@ -52,6 +52,7 @@ def _make_service() -> TownCrierService:
             drama_level=1,
         )
     )
+    service._economy_halted = False
     return service
 
 

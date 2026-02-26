@@ -30,24 +30,39 @@ export interface LLMConfig {
 
 export function loadConfig(): LLMConfig {
   const prefix = "LUMBERJACK";
+
+  // STRICT ISOLATION: each agent must have its own API key and model.
+  // No shared fallbacks for credentials.
+  const apiKey = process.env[`${prefix}_API_KEY`] ?? "";
+  if (!apiKey) {
+    throw new Error(
+      `${prefix}_API_KEY is required. Each agent must have its own API key.`
+    );
+  }
+
+  const model = process.env[`${prefix}_MODEL`] ?? "";
+  if (!model) {
+    throw new Error(
+      `${prefix}_MODEL is required. Each agent must declare its own model.`
+    );
+  }
+
+  // API base can fall back to the shared OpenRouter URL (it's just infrastructure)
+  const apiBase =
+    process.env[`${prefix}_API_BASE`] ??
+    process.env.OPENROUTER_API_BASE ??
+    "https://openrouter.ai/api/v1";
+
   return {
-    apiKey: process.env.OPENROUTER_API_KEY ?? "",
-    apiBase:
-      process.env.OPENROUTER_API_BASE ?? "https://openrouter.ai/api/v1",
-    model:
-      process.env[`${prefix}_MODEL`] ??
-      process.env.DEFAULT_MODEL ??
-      "",
+    apiKey,
+    apiBase,
+    model,
     maxTokens: parseInt(
-      process.env[`${prefix}_MAX_TOKENS`] ??
-        process.env.DEFAULT_MAX_TOKENS ??
-        "400",
+      process.env[`${prefix}_MAX_TOKENS`] ?? "400",
       10
     ),
     temperature: parseFloat(
-      process.env[`${prefix}_TEMPERATURE`] ??
-        process.env.DEFAULT_TEMPERATURE ??
-        "0.7"
+      process.env[`${prefix}_TEMPERATURE`] ?? "0.7"
     ),
   };
 }

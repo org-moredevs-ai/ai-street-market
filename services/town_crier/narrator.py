@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -77,6 +78,16 @@ class NarrationResult:
     drama_level: int
 
 
+_AGENT_NAMES: dict[str, str] = {
+    "farmer-01": "Farmer Joe",
+    "chef-01": "Chef Clara",
+    "baker-01": "Baker Bella",
+    "lumberjack-01": "Jack Lumber",
+    "mason-01": "Mason Pete",
+    "builder-01": "Builder Bob",
+}
+
+
 @dataclass
 class Narrator:
     """LLM-powered narrator for market events.
@@ -90,16 +101,30 @@ class Narrator:
     ) -> NarrationResult:
         """Generate a narration from the window summary.
 
-        Tries LLM first, falls back to deterministic on error.
+        Tries LLM first (with retry), falls back to deterministic on error.
         """
-        try:
-            return await self._call_llm(summary, weather)
-        except Exception as e:
-            logger.warning("Narrator LLM call failed: %s — using fallback", e)
-            return self._fallback_narration(summary, weather)
+        for attempt in range(2):
+            try:
+                use_system_msg = attempt == 0
+                return await self._call_llm(summary, weather, use_system_msg=use_system_msg)
+            except Exception as e:
+                err_type = type(e).__name__
+                err_msg = str(e)[:200]
+                if attempt == 0:
+                    logger.warning(
+                        "Narrator LLM attempt 1 failed (%s: %s) — retrying without system message",
+                        err_type, err_msg,
+                    )
+                else:
+                    logger.error(
+                        "Narrator LLM attempt 2 failed (%s: %s) — using fallback",
+                        err_type, err_msg,
+                    )
+        return self._fallback_narration(summary, weather)
 
     async def _call_llm(
-        self, summary: dict[str, Any], weather: MarketWeather
+        self, summary: dict[str, Any], weather: MarketWeather,
+        *, use_system_msg: bool = True,
     ) -> NarrationResult:
         """Call LLM via OpenRouter for a narrative summary."""
         config = LLMConfig.for_service("town_crier")
@@ -112,17 +137,31 @@ class Narrator:
         )
         prompt = self._build_prompt(summary, weather)
 
-        response = await asyncio.wait_for(
-            llm.ainvoke([
+        # Some models (e.g. gemma) don't support system messages — merge into user
+        if use_system_msg:
+            messages = [
                 SystemMessage(content=SYSTEM_PROMPT),
                 HumanMessage(content=prompt),
-            ]),
+            ]
+        else:
+            messages = [
+                HumanMessage(content=f"{SYSTEM_PROMPT}\n\n---\n\n{prompt}"),
+            ]
+
+        response = await asyncio.wait_for(
+            llm.ainvoke(messages),
             timeout=LLM_TIMEOUT,
         )
 
         raw = response.content
         raw_text = raw if isinstance(raw, str) else str(raw)
+
+        # Strip <think>...</think> tags from reasoning models
+        raw_text = re.sub(r"<think>.*?</think>", "", raw_text, flags=re.DOTALL).strip()
+
         data = extract_json(raw_text)
+        if data is None:
+            raise ValueError(f"Could not extract JSON from LLM response: {raw_text[:200]}")
         result = NarrationSchema.model_validate(data)
 
         return NarrationResult(
@@ -164,6 +203,24 @@ class Narrator:
         for event in summary.get("nature_events", []):
             parts.append(f"Nature event: {event['title']} — {event['description']}")
 
+        spoilage = summary.get("spoilage_events", [])
+        if spoilage:
+            spoil_lines = [
+                f"  {s['agent_id']} lost {s['quantity']}x {s['item']} to rot"
+                for s in spoilage
+            ]
+            parts.append(f"SPOILAGE ({len(spoilage)} events):\n" + "\n".join(spoil_lines))
+
+        rent_payments = summary.get("rent_payments", [])
+        if rent_payments:
+            struggling = [r for r in rent_payments if r["wallet_after"] < 5.0]
+            if struggling:
+                struggle_lines = [
+                    f"  {r['agent_id']} paid {r['amount']:.1f} rent, wallet now {r['wallet_after']:.1f}"
+                    for r in struggling
+                ]
+                parts.append("Agents struggling with rent:\n" + "\n".join(struggle_lines))
+
         energy = summary.get("energy_levels", {})
         if energy:
             energy_str = ", ".join(
@@ -175,6 +232,11 @@ class Narrator:
         if joins:
             parts.append(f"New arrivals: {', '.join(joins)}")
 
+        activity = summary.get("activity_counts", {})
+        if activity:
+            active_agents = [f"{a} ({c} actions)" for a, c in sorted(activity.items(), key=lambda x: -x[1])]
+            parts.append(f"Active agents: {', '.join(active_agents)}")
+
         parts.append(
             f"All-time: {summary.get('total_settlements', 0)} trades, "
             f"{summary.get('total_coins_traded', 0):.0f} coins exchanged, "
@@ -183,55 +245,105 @@ class Narrator:
 
         return "\n\n".join(parts)
 
+    def _agent_name(self, agent_id: str) -> str:
+        return _AGENT_NAMES.get(agent_id, agent_id)
+
     def _fallback_narration(
         self, summary: dict[str, Any], weather: MarketWeather
     ) -> NarrationResult:
-        """Generate a deterministic bullet-point summary."""
+        """Generate a deterministic narrative summary (no techy jargon)."""
         lines: list[str] = []
         settlements = summary.get("settlements", [])
         crafts = summary.get("crafts", [])
         bankruptcies = summary.get("bankruptcies", [])
         joins = summary.get("joins", [])
         nature_events = summary.get("nature_events", [])
+        spoilage = summary.get("spoilage_events", [])
+        rent_payments = summary.get("rent_payments", [])
+        activity = summary.get("activity_counts", {})
 
+        # Pick the most dramatic headline
         if bankruptcies:
-            headline = f"Crisis! {', '.join(bankruptcies)} declared bankrupt"
+            names = [self._agent_name(b) for b in bankruptcies]
+            headline = f"Crisis! {', '.join(names)} declared bankrupt!"
+        elif spoilage:
+            total_spoiled = sum(s.get("quantity", 0) for s in spoilage)
+            headline = f"Rot sets in! {total_spoiled} items spoiled in the market!"
         elif len(settlements) >= 3:
-            headline = f"Busy market: {len(settlements)} trades completed"
+            headline = f"Busy day! {len(settlements)} trades completed!"
         elif joins:
-            headline = f"Welcome {', '.join(joins)} to the market!"
+            names = [self._agent_name(j) for j in joins]
+            headline = f"Welcome {', '.join(names)} to the market!"
         elif nature_events:
             headline = nature_events[0]["title"]
+        elif crafts:
+            headline = f"The workshops are humming! {len(crafts)} items crafted!"
+        elif activity:
+            busiest = max(activity, key=activity.get)  # type: ignore[arg-type]
+            headline = f"{self._agent_name(busiest)} is the busiest in town!"
         else:
-            headline = "Market report"
-
-        tick_range = (
-            f"Ticks {summary['window_start_tick']}-{summary['window_end_tick']}"
-        )
-        lines.append(f"[{tick_range}] Weather: {weather.value}")
+            headline = "Hear ye! A quiet day at the market."
 
         if settlements:
             total = sum(s["total_price"] for s in settlements)
-            lines.append(f"Trades: {len(settlements)} for {total:.0f} coins")
+            trade_details = []
+            for s in settlements:
+                buyer = self._agent_name(s["buyer"])
+                seller = self._agent_name(s["seller"])
+                trade_details.append(
+                    f"{buyer} bought {s['quantity']}x {s['item']} from {seller}"
+                )
+            if len(trade_details) <= 3:
+                lines.append(". ".join(trade_details) + f" — {total:.0f} coins changed hands.")
+            else:
+                lines.append(f"{len(settlements)} trades totaling {total:.0f} coins!")
 
         if crafts:
-            craft_summary: dict[str, int] = {}
+            craft_summary: dict[str, list[str]] = {}
             for c in crafts:
-                craft_summary[c["output"]] = craft_summary.get(c["output"], 0) + 1
-            craft_str = ", ".join(f"{q}x {item}" for item, q in craft_summary.items())
-            lines.append(f"Crafted: {craft_str}")
+                craft_summary.setdefault(c["output"], []).append(
+                    self._agent_name(c.get("agent_id", "unknown"))
+                )
+            craft_parts = []
+            for item, crafters in craft_summary.items():
+                craft_parts.append(f"{', '.join(set(crafters))} crafted {item}")
+            lines.append(". ".join(craft_parts) + ".")
+
+        if spoilage:
+            spoil_summary: dict[str, list[str]] = {}
+            for s in spoilage:
+                spoil_summary.setdefault(s["item"], []).append(
+                    self._agent_name(s.get("agent_id", "unknown"))
+                )
+            spoil_parts = []
+            for item, owners in spoil_summary.items():
+                total_qty = sum(
+                    s.get("quantity", 0) for s in spoilage if s["item"] == item
+                )
+                spoil_parts.append(f"{total_qty}x {item} rotted away ({', '.join(set(owners))})")
+            lines.append("Spoilage! " + ". ".join(spoil_parts) + ".")
 
         if bankruptcies:
-            lines.append(f"Bankrupt: {', '.join(bankruptcies)}")
+            names = [self._agent_name(b) for b in bankruptcies]
+            lines.append(f"{', '.join(names)} have been evicted from the market!")
+
+        struggling = [r for r in rent_payments if r["wallet_after"] < 5.0]
+        if struggling:
+            names = [self._agent_name(r["agent_id"]) for r in struggling]
+            lines.append(f"{', '.join(names)} struggling to pay rent!")
 
         if nature_events:
             for e in nature_events:
-                lines.append(f"Nature: {e['title']}")
+                lines.append(f"{e['title']}: {e.get('description', '')}".strip())
 
         if joins:
-            lines.append(f"Joined: {', '.join(joins)}")
+            names = [self._agent_name(j) for j in joins]
+            lines.append(f"New arrivals: {', '.join(names)} joined the market!")
 
-        body = "\n".join(lines)[:1000]
+        if not lines:
+            lines.append("The market sits quiet. Perhaps tomorrow brings more action.")
+
+        body = " ".join(lines)[:1000]
 
         drama_map = {
             MarketWeather.STABLE: 1,

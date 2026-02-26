@@ -85,11 +85,35 @@ class GovernorAgent:
         else:
             await self._publish_result(envelope, valid=True)
 
+        # For JOIN messages, also send result to the agent's inbox
+        if envelope.type == MessageType.JOIN:
+            agent_id = envelope.payload.get("agent_id", envelope.from_agent)
+            inbox_topic = Topics.agent_inbox(agent_id)
+            inbox_result = create_message(
+                from_agent=self.AGENT_ID,
+                topic=inbox_topic,
+                msg_type=MessageType.VALIDATION_RESULT,
+                payload=ValidationResult(
+                    reference_msg_id=envelope.id,
+                    valid=not bool(business_errors),
+                    reason="; ".join(business_errors) if business_errors else f"Welcome to the market, {agent_id}!",
+                    action=str(envelope.type),
+                    agent_id=agent_id,
+                ),
+                tick=self._state.current_tick,
+            )
+            await self._bus.publish(inbox_topic, inbox_result)
+
     async def _on_tick(self, envelope: Envelope) -> None:
         """Handle system tick messages — TICK advances state, ENERGY_UPDATE updates snapshot."""
         if envelope.type == MessageType.TICK:
             tick_number = envelope.payload.get("tick_number", 0)
-            self._state.advance_tick(tick_number)
+            if not self._state.advance_tick(tick_number):
+                logger.warning(
+                    "Governor ignoring stale tick %d (current: %d)",
+                    tick_number, self._state.current_tick,
+                )
+                return
             logger.info("Governor advanced to tick %d", tick_number)
 
         elif envelope.type == MessageType.ENERGY_UPDATE:

@@ -171,8 +171,11 @@ class WorldEngine:
                 evt.remaining_ticks,
             )
 
-        # Publish EnergyUpdate to /system/tick
-        energy_levels = self._state.get_all_energy()
+        # Publish EnergyUpdate to /system/tick (exclude bankrupt agents)
+        energy_levels = {
+            aid: lvl for aid, lvl in self._state.get_all_energy().items()
+            if not self._state.is_bankrupt(aid)
+        }
         if energy_levels:
             energy_msg = create_message(
                 from_agent=self.AGENT_ID,
@@ -199,6 +202,26 @@ class WorldEngine:
             return
 
         agent_id = envelope.from_agent
+
+        # Reject gathers from bankrupt agents
+        if self._state.is_bankrupt(agent_id):
+            result_msg = create_message(
+                from_agent=self.AGENT_ID,
+                topic=Topics.NATURE,
+                msg_type=MessageType.GATHER_RESULT,
+                payload=GatherResult(
+                    reference_msg_id=envelope.id,
+                    spawn_id=envelope.payload.get("spawn_id", ""),
+                    agent_id=agent_id,
+                    item=envelope.payload.get("item", ""),
+                    quantity=0,
+                    success=False,
+                    reason="Agent is bankrupt",
+                ),
+                tick=self._state.current_tick,
+            )
+            await self._bus.publish(Topics.NATURE, result_msg)
+            return
 
         # Energy check for gather
         energy_error = check_gather_energy(agent_id, self._state)
@@ -296,7 +319,26 @@ class WorldEngine:
             )
 
     async def _on_bank_message(self, envelope: Envelope) -> None:
-        """Handle bank messages — process CONSUME_RESULT for energy restoration."""
+        """Handle bank messages — CONSUME_RESULT, BANKRUPTCY, ECONOMY_HALT."""
+        if envelope.type == MessageType.ECONOMY_HALT:
+            logger.warning(
+                "[tick %d] ECONOMY HALT received — stopping tick loop",
+                self._state.current_tick,
+            )
+            self._running = False
+            return
+
+        if envelope.type == MessageType.BANKRUPTCY:
+            agent_id = envelope.payload.get("agent_id", "")
+            if agent_id:
+                self._state.mark_bankrupt(agent_id)
+                logger.info(
+                    "[tick %d] Agent %s marked bankrupt — excluded from energy updates",
+                    self._state.current_tick,
+                    agent_id,
+                )
+            return
+
         if envelope.type != MessageType.CONSUME_RESULT:
             return
 
@@ -305,6 +347,9 @@ class WorldEngine:
             return
 
         agent_id = envelope.payload.get("agent_id", "")
+        if self._state.is_bankrupt(agent_id):
+            return
+
         energy_restored = envelope.payload.get("energy_restored", 0.0)
 
         if agent_id and energy_restored > 0:

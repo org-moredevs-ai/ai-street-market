@@ -242,7 +242,8 @@ class TestHeartbeatHandling:
         await svc._on_message(env)
         assert svc.state.agent_last_seen["farmer"] == 15
 
-    async def test_heartbeat_not_broadcast(self) -> None:
+    async def test_heartbeat_broadcast(self) -> None:
+        """Heartbeat is forward_medium — broadcast for live inventory updates."""
         svc = _make_service()
         env = _make_envelope(
             MessageType.HEARTBEAT,
@@ -250,7 +251,7 @@ class TestHeartbeatHandling:
             from_agent="farmer",
         )
         await svc._on_message(env)
-        svc._ws.broadcast.assert_not_called()
+        svc._ws.broadcast.assert_called_once()
 
 
 # ── Craft complete handling ──────────────────────────────────────────────────

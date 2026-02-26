@@ -65,6 +65,8 @@ class AgentState:
     is_bankrupt: bool = False
     storage_limit: int = 50  # Updated from RENT_DUE messages or shelf count
     price_history: list[dict] = field(default_factory=list)  # Recent settlement prices
+    spoiled_this_tick: list[dict] = field(default_factory=list)  # [{item, quantity}]
+    confiscated_this_tick: dict[str, int] = field(default_factory=dict)  # item → qty
 
     # --- Helpers ---
 
@@ -117,6 +119,8 @@ class AgentState:
         self.current_tick = tick
         self.actions_this_tick = 0
         self.rent_due_this_tick = 0.0
+        self.spoiled_this_tick.clear()
+        self.confiscated_this_tick.clear()
 
     def clear_observed_offers(self) -> None:
         """Clear observed offers — call after decide() processes them."""

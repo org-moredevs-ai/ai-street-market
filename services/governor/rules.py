@@ -84,7 +84,7 @@ def validate_business_rules(envelope: Envelope, state: GovernorState) -> list[st
         errors.extend(_validate_craft_complete(envelope, state))
 
     elif msg_type == MessageType.JOIN:
-        _handle_join(envelope, state)
+        errors.extend(_handle_join(envelope, state))
 
     elif msg_type == MessageType.HEARTBEAT:
         _handle_heartbeat(envelope, state)
@@ -204,10 +204,31 @@ def _validate_consume(envelope: Envelope) -> list[str]:
     return errors
 
 
-def _handle_join(envelope: Envelope, state: GovernorState) -> None:
-    """Register the agent in state."""
+def _handle_join(envelope: Envelope, state: GovernorState) -> list[str]:
+    """Validate and register the agent in state.
+
+    Returns errors if:
+    - Market is not yet open (no tick received)
+    - agent_id is empty
+    - Agent already registered (duplicate join)
+    """
+    errors: list[str] = []
     agent_id = envelope.payload.get("agent_id", envelope.from_agent)
+
+    if not state.market_open:
+        errors.append("Market is not yet open — wait for the first tick")
+        return errors
+
+    if not agent_id:
+        errors.append("JOIN missing agent_id")
+        return errors
+
+    if state.is_known_agent(agent_id):
+        # Allow re-join silently (agent may have restarted)
+        return []
+
     state.register_agent(agent_id)
+    return errors
 
 
 def _handle_heartbeat(envelope: Envelope, state: GovernorState) -> None:

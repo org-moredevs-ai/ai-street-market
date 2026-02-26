@@ -26,6 +26,7 @@ export const MessageType = {
   BANKRUPTCY: "bankruptcy",
   NATURE_EVENT: "nature_event",
   NARRATION: "narration",
+  ITEM_SPOILED: "item_spoiled",
 } as const;
 
 export type MessageTypeValue = (typeof MessageType)[keyof typeof MessageType];

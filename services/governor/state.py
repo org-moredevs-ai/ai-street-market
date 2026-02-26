@@ -5,6 +5,10 @@ from dataclasses import dataclass, field
 MAX_ACTIONS_PER_TICK = 5
 HEARTBEAT_TIMEOUT_TICKS = 10
 
+# Infrastructure services are exempt from rate limiting — they process
+# many messages per tick legitimately (e.g. Banker settles multiple trades).
+SERVICE_IDS = frozenset({"banker", "world", "governor", "town_crier", "websocket_bridge"})
+
 
 @dataclass
 class ActiveCraft:
@@ -23,6 +27,7 @@ class GovernorState:
     """
 
     current_tick: int = 0
+    market_open: bool = False
     _actions_this_tick: dict[str, int] = field(default_factory=dict)
     _last_heartbeat_tick: dict[str, int] = field(default_factory=dict)
     _active_crafts: dict[str, ActiveCraft] = field(default_factory=dict)
@@ -30,10 +35,19 @@ class GovernorState:
     _agent_energy: dict[str, float] = field(default_factory=dict)
     _bankrupt_agents: set[str] = field(default_factory=set)
 
-    def advance_tick(self, tick: int) -> None:
-        """Move to a new tick and reset per-tick counters."""
+    def advance_tick(self, tick: int) -> bool:
+        """Move to a new tick and reset per-tick counters.
+
+        Returns False if the tick is not strictly greater than the current tick
+        (protects against stale messages from previous runs).
+        """
+        if tick <= self.current_tick:
+            return False
         self.current_tick = tick
         self._actions_this_tick.clear()
+        if not self.market_open:
+            self.market_open = True
+        return True
 
     def record_action(self, agent_id: str) -> None:
         """Record that an agent performed an action this tick."""
@@ -44,7 +58,13 @@ class GovernorState:
         return self._actions_this_tick.get(agent_id, 0)
 
     def is_rate_limited(self, agent_id: str) -> bool:
-        """Check if an agent has exceeded the per-tick action limit."""
+        """Check if an agent has exceeded the per-tick action limit.
+
+        Infrastructure services (banker, world, etc.) are exempt — they
+        legitimately process many messages per tick.
+        """
+        if agent_id in SERVICE_IDS:
+            return False
         return self.get_action_count(agent_id) >= MAX_ACTIONS_PER_TICK
 
     def record_heartbeat(self, agent_id: str) -> None:

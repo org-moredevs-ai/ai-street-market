@@ -77,16 +77,18 @@ class WebSocketBridgeService:
 
         # Update aggregate state
         if should_update_state(msg_type):
-            self._update_state(msg_type, payload, tick)
+            self._update_state(msg_type, payload, tick, from_agent=envelope.from_agent)
 
         # Broadcast to WebSocket clients
         if should_forward(msg_type):
+            serialized = envelope.model_dump(by_alias=True)
+            self._state.recent_events.append(serialized)
             await self._ws.broadcast({
                 "type": "event",
-                "data": envelope.model_dump(by_alias=True),
+                "data": serialized,
             })
 
-    def _update_state(self, msg_type: str, payload: dict, tick: int) -> None:
+    def _update_state(self, msg_type: str, payload: dict, tick: int, from_agent: str = "") -> None:
         """Route message to the appropriate BridgeState handler."""
         if msg_type == MessageType.TICK:
             tick_number = payload.get("tick_number", 0)
@@ -118,3 +120,15 @@ class WebSocketBridgeService:
 
         elif msg_type == MessageType.CRAFT_COMPLETE:
             self._state.on_craft_complete(payload)
+
+        elif msg_type == MessageType.AGENT_STATUS:
+            self._state.on_agent_status(payload, tick)
+
+        elif msg_type == MessageType.ITEM_SPOILED:
+            self._state.on_item_spoiled(payload)
+
+        elif msg_type == MessageType.ECONOMY_HALT:
+            self._state.on_economy_halt(payload)
+
+        elif msg_type in (MessageType.OFFER, MessageType.BID, MessageType.ACCEPT):
+            self._state.on_trade_action(from_agent)

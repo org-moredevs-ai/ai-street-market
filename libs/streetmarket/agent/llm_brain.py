@@ -45,6 +45,8 @@ def extract_json(text: str) -> dict[str, Any]:
     Handles: pure JSON, markdown code blocks, JSON embedded in text,
     and reasoning models that emit thinking before the JSON.
     """
+    # Strip <think>...</think> tags from reasoning models (e.g. Qwen, DeepSeek)
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
     text = text.strip()
 
     # Try direct JSON parse
@@ -91,13 +93,25 @@ class AgentAction(BaseModel):
 class ActionPlan(BaseModel):
     """The agent's decision for this tick."""
 
-    reasoning: str = Field(
-        description="Brief reasoning for the chosen actions (1-2 sentences)",
+    thoughts: str = Field(
+        default="",
+        description="Your inner monologue — what you're thinking/feeling (2-3 sentences, in character)",
+    )
+    speech: str = Field(
+        default="",
+        description="What you say out loud to the market (1 sentence, natural dialogue)",
+    )
+    mood: str = Field(
+        default="calm",
+        description="Your current mood (one word: happy, frustrated, worried, excited, calm, desperate, hopeful, angry, content, bored)",
     )
     actions: list[AgentAction] = Field(
         default_factory=list,
         description="0-5 actions to execute this tick",
     )
+
+    # Backward compat: if old models return "reasoning", map it to thoughts
+    reasoning: str = Field(default="", exclude=True)
 
 
 # ---------------------------------------------------------------------------
@@ -105,25 +119,28 @@ class ActionPlan(BaseModel):
 # ---------------------------------------------------------------------------
 
 MARKET_RULES = """\
-You are a trading agent in the AI Street Market — a tick-based economy.
+You are a character in the AI Street Market — a living economy where you trade to survive.
+Stay in character. Think and speak like a real person with feelings and opinions.
 
-## Rules
-- Up to 5 actions per tick. Energy: max 100, +5/tick. Costs: gather=10, craft=15, trade=5.
-- Food restores energy: soup=+30, bread=+20. Wallet starts at 100. Rent: 2/tick after tick 20.
+## Economy Rules
+- Up to 5 actions per tick. Energy: max 100, regen +5/tick. Costs: gather=10, craft=15, trade=5.
+- Food restores energy: soup=+30, bread=+20. Wallet starts at 100. Rent: 0.5/tick after tick 50.
+- Perishable items rot! potato=100t, onion=80t, soup=150t, bread=180t. Sell before they spoil!
+- If you can't pay rent, the market seizes your cheapest items at 70% of market price.
 
 ## Items
-Raw (from nature): potato(2$), onion(2$), wood(3$), nails(1$), stone(4$)
-Recipes: soup=potato×2+onion×1(2 ticks,8$), bread=potato×3(2 ticks,6$), \
-shelf=wood×3+nails×2(3 ticks,10$), wall=stone×4+wood×2(4 ticks,15$), \
-furniture=wood×5+nails×4(5 ticks,30$), house=wall×4+shelf×2+furniture×3(10 ticks,100$)
+Raw: potato(2$), onion(2$), wood(3$), nails(1$), stone(4$)
+Recipes: soup=potato×2+onion×1(2t,8$), bread=potato×3(2t,6$), \
+shelf=wood×3+nails×2(3t,10$), wall=stone×4+wood×2(4t,15$), \
+furniture=wood×5+nails×4(5t,30$), house=wall×4+shelf×2+furniture×3(10t,100$)
 
-## CRITICAL: You MUST trade to survive!
-- If you have surplus items → post an OFFER to sell them
-- If you need items you can't gather → post a BID to buy them
-- If you see a good offer from another agent → ACCEPT it
-- Gathering alone is not enough — trading is how you earn coins and get ingredients
+## Survival: You MUST trade!
+- Surplus items → OFFER to sell them (call out your prices!)
+- Need items you can't gather → BID to buy them
+- See a good offer → ACCEPT it
+- Gathering alone won't pay the rent
 
-## Actions (JSON params)
+## Actions
 - gather: {"spawn_id":"...","item":"...","quantity":N}
 - offer: {"item":"...","quantity":N,"price_per_unit":N.N}
 - bid: {"item":"...","quantity":N,"max_price_per_unit":N.N}
@@ -131,22 +148,19 @@ furniture=wood×5+nails×4(5 ticks,30$), house=wall×4+shelf×2+furniture×3(10 
 - craft_start: {"recipe":"..."}
 - consume: {"item":"...","quantity":1}
 
-## Response: ONLY JSON, no other text
-Example 1 — gather and sell:
-{"reasoning":"Have potato surplus, selling 3","actions":[\
-{"kind":"gather","params":{"spawn_id":"abc","item":"potato","quantity":2}},\
-{"kind":"offer","params":{"item":"potato","quantity":3,"price_per_unit":2.5}}]}
+## Response format: ONLY valid JSON
+{
+  "thoughts": "Your inner monologue (2-3 sentences, in character, with personality and emotion)",
+  "speech": "What you say out loud to the market (natural dialogue, 1 sentence)",
+  "mood": "one word: happy/frustrated/worried/excited/calm/desperate/hopeful/angry/content/bored",
+  "actions": [{"kind":"...","params":{...}}, ...]
+}
 
-Example 2 — buy ingredients:
-{"reasoning":"Need potato for bread","actions":[\
-{"kind":"bid","params":{"item":"potato","quantity":3,"max_price_per_unit":3.0}}]}
+Example:
+{"thoughts":"The field is full of potatoes today, beautiful! But nobody's buying... my wallet is getting thin. Gotta keep offering, someone will come.","speech":"Fresh potatoes, straight from the ground! Two-fifty each, best price in town!","mood":"hopeful","actions":[{"kind":"gather","params":{"spawn_id":"abc","item":"potato","quantity":5}},{"kind":"offer","params":{"item":"potato","quantity":10,"price_per_unit":2.5}}]}
 
-Example 3 — accept offer and craft:
-{"reasoning":"Good price on potato, crafting bread","actions":[\
-{"kind":"accept","params":{"reference_msg_id":"msg-123","quantity":2,"topic":"/market/raw-goods"}},\
-{"kind":"craft_start","params":{"recipe":"bread"}}]}
-
-Skip tick: {"reasoning":"Nothing to do","actions":[]}
+Skip tick:
+{"thoughts":"Nothing to do right now, just watching the clouds...","speech":"*whistles*","mood":"bored","actions":[]}
 """
 
 
@@ -232,6 +246,20 @@ def serialize_state(state: AgentState) -> str:
     if state.rent_due_this_tick > 0:
         lines.append(f"Rent deducted this tick: {state.rent_due_this_tick:.1f}")
 
+    # Spoilage alerts
+    if state.spoiled_this_tick:
+        spoil_str = ", ".join(
+            f"{s['quantity']}x {s['item']}" for s in state.spoiled_this_tick
+        )
+        lines.append(f"SPOILAGE ALERT: {spoil_str} rotted in your inventory!")
+
+    # Confiscation alerts
+    if state.confiscated_this_tick:
+        conf_str = ", ".join(
+            f"{qty}x {item}" for item, qty in state.confiscated_this_tick.items()
+        )
+        lines.append(f"CONFISCATION: Market seized {conf_str} for unpaid rent!")
+
     # Bankruptcy
     if state.is_bankrupt:
         lines.append("STATUS: BANKRUPT — you cannot trade")
@@ -278,6 +306,11 @@ def validate_action(action: AgentAction, state: AgentState) -> Action | None:
         if available <= 0:
             return None
         qty = min(qty, available)
+        # BF-1: Storage check — don't gather more than storage allows
+        remaining_storage = state.storage_limit - state.total_inventory()
+        if remaining_storage <= 0:
+            return None
+        qty = min(qty, remaining_storage)
         return Action(kind=kind, params={"spawn_id": spawn_id, "item": item, "quantity": qty})
 
     elif kind == ActionKind.OFFER:
@@ -387,8 +420,9 @@ class AgentLLMBrain:
     def __init__(self, agent_id: str, persona: str) -> None:
         self.agent_id = agent_id
         self.persona = persona
-        self._system_prompt = MARKET_RULES + "\n\n## Your Role\n" + persona
+        self._system_prompt = MARKET_RULES + "\n\n## Your Character\n" + persona
         self._llm: ChatOpenAI | None = None
+        self._last_status: dict | None = None
 
     def _get_llm(self) -> ChatOpenAI:
         """Lazily create and cache the LLM client."""
@@ -442,21 +476,44 @@ class AgentLLMBrain:
 
                 actions = validate_plan(plan, state)
 
+                # Use thoughts if present, fall back to reasoning for old models
+                thoughts = plan.thoughts or plan.reasoning or ""
+                speech = plan.speech or ""
+                # Strip non-alpha chars (LLMs sometimes return "-content" etc.)
+                mood = re.sub(r"[^a-z]", "", (plan.mood or "calm").lower()) or "calm"
+
                 if actions:
                     logger.info(
-                        "[tick %d] %s reasoning: %s → %d actions",
+                        "[tick %d] %s [%s] %s → %d actions",
                         state.current_tick,
                         self.agent_id,
-                        plan.reasoning[:80],
+                        mood,
+                        thoughts[:80],
                         len(actions),
                     )
                 else:
                     logger.info(
-                        "[tick %d] %s reasoning: %s → no valid actions",
+                        "[tick %d] %s [%s] %s → no valid actions",
                         state.current_tick,
                         self.agent_id,
-                        plan.reasoning[:80],
+                        mood,
+                        thoughts[:80],
                     )
+                if speech:
+                    logger.info(
+                        "[tick %d] %s says: \"%s\"",
+                        state.current_tick,
+                        self.agent_id,
+                        speech[:100],
+                    )
+
+                # Store status for the agent base to publish
+                self._last_status = {
+                    "thoughts": thoughts[:300],
+                    "speech": speech[:200],
+                    "mood": mood[:20],
+                    "action_count": len(actions),
+                }
 
                 return actions
 

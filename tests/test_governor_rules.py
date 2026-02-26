@@ -278,6 +278,7 @@ class TestCraftCompleteValidation:
 class TestJoinValidation:
     def test_join_registers_agent(self):
         state = GovernorState()
+        state.advance_tick(1)  # Open the market
         env = _make_envelope(
             MessageType.JOIN,
             {
@@ -290,6 +291,38 @@ class TestJoinValidation:
         errors = validate_business_rules(env, state)
         assert errors == []
         assert state.is_known_agent("farmer-01")
+
+    def test_join_rejected_before_market_open(self):
+        state = GovernorState()  # No tick yet
+        env = _make_envelope(
+            MessageType.JOIN,
+            {
+                "agent_id": "farmer-01",
+                "name": "Farmer",
+                "description": "A potato farmer",
+            },
+            topic="/market/square",
+        )
+        errors = validate_business_rules(env, state)
+        assert any("Market is not yet open" in e for e in errors)
+        assert not state.is_known_agent("farmer-01")
+
+    def test_duplicate_join_allowed_silently(self):
+        state = GovernorState()
+        state.advance_tick(1)
+        env = _make_envelope(
+            MessageType.JOIN,
+            {
+                "agent_id": "farmer-01",
+                "name": "Farmer",
+                "description": "A potato farmer",
+            },
+            topic="/market/square",
+        )
+        validate_business_rules(env, state)
+        # Second join should be fine (agent restart scenario)
+        errors = validate_business_rules(env, state)
+        assert errors == []
 
 
 class TestHeartbeatValidation:

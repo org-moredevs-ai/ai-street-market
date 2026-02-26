@@ -45,6 +45,7 @@ class WorldState:
     _spawn_table: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_SPAWN_TABLE))
     _energy: dict[str, float] = field(default_factory=dict)
     _sheltered: set[str] = field(default_factory=set)
+    _bankrupt: set[str] = field(default_factory=set)
     _gather_history: list[dict] = field(default_factory=list)
 
     @property
@@ -148,6 +149,16 @@ class WorldState:
     def is_sheltered(self, agent_id: str) -> bool:
         """Check if an agent has shelter."""
         return agent_id in self._sheltered
+
+    def mark_bankrupt(self, agent_id: str) -> None:
+        """Mark an agent as bankrupt — excluded from energy regen/updates."""
+        self._bankrupt.add(agent_id)
+        # Set energy to 0
+        self._energy[agent_id] = 0.0
+
+    def is_bankrupt(self, agent_id: str) -> bool:
+        """Check if an agent is bankrupt."""
+        return agent_id in self._bankrupt
 
     # --- Gather history ---
 

@@ -298,3 +298,69 @@ class TestGatherResult:
         )
         assert gr.quantity == 3
         assert gr.success is True
+
+
+# --- Perishable items ---
+
+
+class TestPerishableItems:
+    def test_perishable_items_have_spoil_ticks(self):
+        from streetmarket.models.catalogue import ITEMS, PERISHABLE_ITEMS
+
+        for name, ticks in PERISHABLE_ITEMS.items():
+            assert ITEMS[name].spoil_ticks == ticks
+            assert ticks > 0
+
+    def test_non_perishable_items_have_none(self):
+        from streetmarket.models.catalogue import ITEMS
+
+        for name in ("wood", "nails", "stone", "shelf", "wall", "furniture", "house"):
+            assert ITEMS[name].spoil_ticks is None
+
+    def test_perishable_items_dict_complete(self):
+        from streetmarket.models.catalogue import PERISHABLE_ITEMS
+
+        assert "potato" in PERISHABLE_ITEMS
+        assert "onion" in PERISHABLE_ITEMS
+        assert "soup" in PERISHABLE_ITEMS
+        assert "bread" in PERISHABLE_ITEMS
+        assert PERISHABLE_ITEMS["potato"] == 100
+        assert PERISHABLE_ITEMS["onion"] == 80
+        assert PERISHABLE_ITEMS["soup"] == 150
+        assert PERISHABLE_ITEMS["bread"] == 180
+
+
+class TestItemSpoiledMessage:
+    def test_item_spoiled_message_type(self):
+        assert MessageType.ITEM_SPOILED == "item_spoiled"
+
+    def test_item_spoiled_payload(self):
+        from streetmarket import ItemSpoiled
+
+        payload = ItemSpoiled(agent_id="farmer-01", item="potato", quantity=5)
+        assert payload.agent_id == "farmer-01"
+        assert payload.item == "potato"
+        assert payload.quantity == 5
+
+    def test_item_spoiled_in_registry(self):
+        from streetmarket import PAYLOAD_REGISTRY, ItemSpoiled
+
+        assert MessageType.ITEM_SPOILED in PAYLOAD_REGISTRY
+        assert PAYLOAD_REGISTRY[MessageType.ITEM_SPOILED] is ItemSpoiled
+
+    def test_rent_due_confiscated_items(self):
+        from streetmarket import RentDue
+
+        payload = RentDue(
+            agent_id="farmer-01",
+            amount=0.5,
+            wallet_after=0.0,
+            confiscated_items={"potato": 3, "onion": 1},
+        )
+        assert payload.confiscated_items == {"potato": 3, "onion": 1}
+
+    def test_rent_due_confiscated_items_default_none(self):
+        from streetmarket import RentDue
+
+        payload = RentDue(agent_id="farmer-01", amount=0.5, wallet_after=0.0)
+        assert payload.confiscated_items is None

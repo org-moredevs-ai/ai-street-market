@@ -25,24 +25,52 @@ function makeState(overrides: Partial<AgentState> = {}): AgentState {
 // ---------------------------------------------------------------------------
 
 describe("LLMConfig", () => {
-  it("loads default config from env", () => {
-    process.env.OPENROUTER_API_KEY = "test-key";
-    process.env.DEFAULT_MODEL = "test-model";
+  it("loads per-agent config from env", () => {
+    process.env.LUMBERJACK_API_KEY = "lj-key";
+    process.env.LUMBERJACK_MODEL = "lj-model";
     const config = loadConfig();
-    expect(config.apiKey).toBe("test-key");
-    expect(config.model).toBe("test-model");
-    delete process.env.OPENROUTER_API_KEY;
-    delete process.env.DEFAULT_MODEL;
+    expect(config.apiKey).toBe("lj-key");
+    expect(config.model).toBe("lj-model");
+    expect(config.apiBase).toContain("openrouter");
+    expect(config.maxTokens).toBe(400);
+    expect(config.temperature).toBe(0.7);
+    delete process.env.LUMBERJACK_API_KEY;
+    delete process.env.LUMBERJACK_MODEL;
   });
 
-  it("uses per-agent model override", () => {
-    process.env.OPENROUTER_API_KEY = "test-key";
+  it("uses per-agent overrides for all fields", () => {
+    process.env.LUMBERJACK_API_KEY = "lj-key";
     process.env.LUMBERJACK_MODEL = "custom-model";
-    process.env.DEFAULT_MODEL = "default-model";
+    process.env.LUMBERJACK_API_BASE = "https://custom.ai/v1";
+    process.env.LUMBERJACK_MAX_TOKENS = "200";
+    process.env.LUMBERJACK_TEMPERATURE = "0.3";
     const config = loadConfig();
     expect(config.model).toBe("custom-model");
+    expect(config.apiBase).toBe("https://custom.ai/v1");
+    expect(config.maxTokens).toBe(200);
+    expect(config.temperature).toBe(0.3);
+    delete process.env.LUMBERJACK_API_KEY;
+    delete process.env.LUMBERJACK_MODEL;
+    delete process.env.LUMBERJACK_API_BASE;
+    delete process.env.LUMBERJACK_MAX_TOKENS;
+    delete process.env.LUMBERJACK_TEMPERATURE;
+  });
+
+  it("throws without LUMBERJACK_API_KEY", () => {
+    delete process.env.LUMBERJACK_API_KEY;
+    process.env.OPENROUTER_API_KEY = "shared-key";
+    process.env.LUMBERJACK_MODEL = "m";
+    expect(() => loadConfig()).toThrow("LUMBERJACK_API_KEY");
     delete process.env.OPENROUTER_API_KEY;
     delete process.env.LUMBERJACK_MODEL;
+  });
+
+  it("throws without LUMBERJACK_MODEL", () => {
+    process.env.LUMBERJACK_API_KEY = "lj-key";
+    delete process.env.LUMBERJACK_MODEL;
+    process.env.DEFAULT_MODEL = "shared-model";
+    expect(() => loadConfig()).toThrow("LUMBERJACK_MODEL");
+    delete process.env.LUMBERJACK_API_KEY;
     delete process.env.DEFAULT_MODEL;
   });
 });

@@ -5,7 +5,9 @@ import logging
 from streetmarket import (
     Bankruptcy,
     ConsumeResult,
+    EconomyHalt,
     Envelope,
+    ItemSpoiled,
     MarketBusClient,
     MessageType,
     RentDue,
@@ -27,7 +29,7 @@ from services.banker.rules import (
     process_offer,
     process_rent,
 )
-from services.banker.state import BankerState, TradeResult
+from services.banker.state import BankerState, SpoilageResult, TradeResult
 
 logger = logging.getLogger(__name__)
 
@@ -72,11 +74,16 @@ class BankerAgent:
 
     async def _on_market_message(self, envelope: Envelope) -> None:
         """Handle an incoming market message."""
-        # Skip our own settlement/consume_result messages to avoid infinite loops
+        # Skip our own messages to avoid infinite loops
         if envelope.from_agent == self.AGENT_ID and envelope.type in (
             MessageType.SETTLEMENT,
             MessageType.CONSUME_RESULT,
+            MessageType.ITEM_SPOILED,
         ):
+            return
+
+        # Reject all actions from bankrupt agents (except JOIN — no-op anyway)
+        if envelope.type != MessageType.JOIN and self._state.is_bankrupt(envelope.from_agent):
             return
 
         msg_type = envelope.type
@@ -205,10 +212,24 @@ class BankerAgent:
         if envelope.type != MessageType.TICK:
             return
         tick_number = envelope.payload.get("tick_number", 0)
-        self._state.advance_tick(tick_number)
+        if not self._state.advance_tick(tick_number):
+            logger.warning(
+                "Banker ignoring stale tick %d (current: %d)",
+                tick_number, self._state.current_tick,
+            )
+            return
         expired = self._state.purge_expired_orders()
         if expired:
             logger.info("Purged %d expired orders at tick %d", len(expired), tick_number)
+
+        # Process spoilage BEFORE rent (removes rotten items)
+        spoilage_results = self._state.process_spoilage()
+        for spoilage in spoilage_results:
+            await self._publish_item_spoiled(spoilage)
+            logger.info(
+                "[tick %d] SPOILED: %d %s from %s",
+                tick_number, spoilage.quantity, spoilage.item, spoilage.agent_id,
+            )
 
         # Process rent for all agents
         for agent_id in self._state.get_all_agent_ids():
@@ -233,10 +254,21 @@ class BankerAgent:
             await self._publish_bankruptcy(agent_id)
             logger.warning("[tick %d] BANKRUPTCY: %s declared bankrupt", tick_number, agent_id)
 
+        # Halt economy if all agents are bankrupt
+        if newly_bankrupt and self._state.all_agents_bankrupt():
+            await self._publish_economy_halt(tick_number)
+            logger.warning(
+                "[tick %d] ECONOMY HALT: All agents bankrupt — stopping market",
+                tick_number,
+            )
+
         logger.info("Banker advanced to tick %d", tick_number)
 
     async def _publish_settlement(self, result: TradeResult) -> None:
         """Publish a Settlement message to the bank topic."""
+        # Include wallet-after for both parties so the bridge can track wallets
+        buyer_account = self._state.get_account(result.buyer)
+        seller_account = self._state.get_account(result.seller)
         msg = create_message(
             from_agent=self.AGENT_ID,
             topic=Topics.BANK,
@@ -249,6 +281,8 @@ class BankerAgent:
                 quantity=result.quantity,
                 total_price=result.total_price,
                 status="completed",
+                buyer_wallet_after=buyer_account.wallet if buyer_account else None,
+                seller_wallet_after=seller_account.wallet if seller_account else None,
             ),
             tick=self._state.current_tick,
         )
@@ -295,6 +329,24 @@ class BankerAgent:
                 wallet_after=rent_data.wallet_after,
                 exempt=rent_data.exempt,
                 reason=rent_data.reason,
+                treasury_balance=self._state.town_treasury,
+                total_rent_collected=self._state.total_rent_collected,
+                confiscated_items=rent_data.confiscated_items,
+            ),
+            tick=self._state.current_tick,
+        )
+        await self._bus.publish(Topics.BANK, msg)
+
+    async def _publish_item_spoiled(self, spoilage: SpoilageResult) -> None:
+        """Publish an ItemSpoiled message to the bank topic."""
+        msg = create_message(
+            from_agent=self.AGENT_ID,
+            topic=Topics.BANK,
+            msg_type=MessageType.ITEM_SPOILED,
+            payload=ItemSpoiled(
+                agent_id=spoilage.agent_id,
+                item=spoilage.item,
+                quantity=spoilage.quantity,
             ),
             tick=self._state.current_tick,
         )
@@ -320,5 +372,20 @@ class BankerAgent:
                 reason=self._bankruptcy_reason(agent_id),
             ),
             tick=self._state.current_tick,
+        )
+        await self._bus.publish(Topics.BANK, msg)
+
+    async def _publish_economy_halt(self, tick_number: int) -> None:
+        """Publish an ECONOMY_HALT message — all agents are bankrupt."""
+        agents = self._state.get_all_agent_ids()
+        msg = create_message(
+            from_agent=self.AGENT_ID,
+            topic=Topics.BANK,
+            msg_type=MessageType.ECONOMY_HALT,
+            payload=EconomyHalt(
+                reason=f"All {len(agents)} agents declared bankrupt",
+                final_tick=tick_number,
+            ),
+            tick=tick_number,
         )
         await self._bus.publish(Topics.BANK, msg)

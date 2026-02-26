@@ -35,6 +35,7 @@ class TownCrierService:
         self._bus = MarketBusClient(nats_url)
         self._state = TownCrierState()
         self._narrator = Narrator()
+        self._economy_halted = False
 
     @property
     def state(self) -> TownCrierState:
@@ -69,7 +70,8 @@ class TownCrierService:
         """Handle system messages (TICK, ENERGY_UPDATE)."""
         if envelope.type == MessageType.TICK:
             tick_number = envelope.payload.get("tick_number", 0)
-            self._state.advance_tick(tick_number)
+            if not self._state.advance_tick(tick_number):
+                return
             await self._maybe_narrate(tick_number)
 
         elif envelope.type == MessageType.ENERGY_UPDATE:
@@ -122,6 +124,19 @@ class TownCrierService:
                     quantity=qty,
                 )
 
+        elif msg_type == MessageType.ITEM_SPOILED:
+            p = envelope.payload
+            self._state.record_spoilage(
+                agent_id=p.get("agent_id", ""),
+                item=p.get("item", ""),
+                quantity=p.get("quantity", 0),
+            )
+
+        elif msg_type == MessageType.ECONOMY_HALT:
+            self._economy_halted = True
+            reason = envelope.payload.get("reason", "All agents bankrupt")
+            await self._publish_halt_narration(envelope.tick, reason)
+
         elif msg_type in (
             MessageType.OFFER,
             MessageType.BID,
@@ -148,6 +163,9 @@ class TownCrierService:
         - Every time a new agent joins: welcome narration
         - Every NARRATION_INTERVAL ticks: regular market update
         """
+        if self._economy_halted:
+            return
+
         opening = tick == 1
         welcome = len(self._state.joins) > 0 and tick > 1
         if not opening and not welcome and not self._state.should_narrate(tick):
@@ -186,3 +204,32 @@ class TownCrierService:
         )
 
         self._state.reset_window()
+
+    async def _publish_halt_narration(self, tick: int, reason: str) -> None:
+        """Publish a final narration announcing the market has closed."""
+        narration_payload = Narration(
+            headline="The market is closed!",
+            body=(
+                f"Hear ye, hear ye! The AI Street Market has shut its gates. "
+                f"{reason}. No more trades, no more crafts, no more gathering. "
+                f"The stalls are empty and the square falls silent. "
+                f"What was once a bustling marketplace now stands as a monument "
+                f"to the fortunes lost. The market closed at tick {tick}."
+            ),
+            weather=self._state.compute_market_weather(),
+            predictions="The market may reopen another day.",
+            drama_level=10,
+            window_start_tick=tick,
+            window_end_tick=tick,
+        )
+
+        envelope = create_message(
+            from_agent=self.AGENT_ID,
+            topic=Topics.SQUARE,
+            msg_type=MessageType.NARRATION,
+            payload=narration_payload,
+            tick=tick,
+        )
+
+        await self._bus.publish(Topics.SQUARE, envelope)
+        logger.warning("[tick %d] FINAL NARRATION: Market closed — %s", tick, reason)

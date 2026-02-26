@@ -18,9 +18,14 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # ── Constants ────────────────────────────────────────────────────────────────
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# Load .env from project root (does not override existing env vars)
+load_dotenv(PROJECT_ROOT / ".env")
 NATS_HEALTH_URL = "http://localhost:8222/healthz"
 NATS_HEALTH_TIMEOUT = 15  # seconds
 NATS_HEALTH_INTERVAL = 0.5  # seconds between polls
@@ -298,15 +303,73 @@ class EconomyRunner:
         nats_color = "\033[90m"  # gray
         print(format_log_line("runner", nats_color, msg))
 
+    async def _kill_stale_processes(self) -> None:
+        """Kill any leftover processes from a previous economy run."""
+        # Match known service/agent module patterns
+        patterns = [s.name for s in SERVICES]
+        proc = await asyncio.create_subprocess_exec(
+            "ps", "aux",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+        if not stdout:
+            return
+
+        my_pid = os.getpid()
+        killed = 0
+        for line in stdout.decode().splitlines():
+            if any(f"-m services.{p}" in line or f"-m agents.{p}" in line for p in patterns):
+                parts = line.split()
+                pid = int(parts[1])
+                if pid == my_pid:
+                    continue
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                    killed += 1
+                except (ProcessLookupError, PermissionError):
+                    pass
+            # Also catch lumberjack (TypeScript)
+            if "tsx" in line and "index.ts" in line:
+                parts = line.split()
+                pid = int(parts[1])
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                    killed += 1
+                except (ProcessLookupError, PermissionError):
+                    pass
+
+        if killed:
+            self._print(f"Killed {killed} stale processes from previous run")
+            await asyncio.sleep(1)  # Let them die
+
+    async def _purge_nats_stream(self) -> None:
+        """Purge the STREETMARKET stream to avoid stale messages."""
+        try:
+            import nats as nats_lib
+            nc = await nats_lib.connect("nats://localhost:4222")
+            js = nc.jetstream()
+            await js.purge_stream("STREETMARKET")
+            await nc.close()
+            self._print("Purged NATS stream STREETMARKET")
+        except Exception as e:
+            self._print(f"Stream purge skipped: {e}")
+
     async def start(self) -> None:
         """Start all services in phased order.
 
         Phase 3 (agents) launches one agent every 10 seconds so each gets
         a dramatic Town Crier introduction instead of all arriving at once.
         """
+        # Phase 0: Kill stale processes from a previous run
+        await self._kill_stale_processes()
+
         # Phase 1: NATS
         self._print("Phase 1: Infrastructure")
         await ensure_nats(self._print)
+
+        # Purge NATS stream to avoid stale messages from previous runs
+        await self._purge_nats_stream()
 
         # Phase 2 & 3: services and agents
         for phase in get_phases():
@@ -369,11 +432,49 @@ class EconomyRunner:
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 
+def _validate_agent_env() -> list[str]:
+    """Validate that every agent has its own API key and model.
+
+    Returns a list of error messages (empty = all good).
+    """
+    from streetmarket.agent.llm_config import AGENT_PREFIXES
+
+    errors: list[str] = []
+    for prefix in AGENT_PREFIXES:
+        if not os.environ.get(f"{prefix}_API_KEY"):
+            errors.append(f"  {prefix}_API_KEY is missing")
+        if not os.environ.get(f"{prefix}_MODEL"):
+            errors.append(f"  {prefix}_MODEL is missing")
+    return errors
+
+
 async def main() -> None:
-    if not os.environ.get("OPENROUTER_API_KEY"):
+    # Services need at least a shared key OR per-service keys
+    has_shared = bool(os.environ.get("OPENROUTER_API_KEY"))
+    has_service_keys = all(
+        os.environ.get(f"{svc}_API_KEY")
+        for svc in ("TOWN_CRIER", "WORLD")
+    )
+    if not has_shared and not has_service_keys:
         print(
-            "\033[91mERROR: OPENROUTER_API_KEY is required — "
-            "this is the AI Street Market.\033[0m"
+            "\033[91mERROR: Services need LLM access. Set OPENROUTER_API_KEY "
+            "(shared) or TOWN_CRIER_API_KEY + WORLD_API_KEY.\033[0m"
+        )
+        sys.exit(1)
+
+    # Every agent must have its own isolated config
+    agent_errors = _validate_agent_env()
+    if agent_errors:
+        print(
+            "\033[91mERROR: Agent isolation violation — each agent must have "
+            "its own API key and model.\033[0m"
+        )
+        print("\033[91mMissing environment variables:\033[0m")
+        for err in agent_errors:
+            print(f"\033[91m{err}\033[0m")
+        print(
+            "\n\033[93mHint: Copy .env.example and set a {PREFIX}_API_KEY + "
+            "{PREFIX}_MODEL for each agent.\033[0m"
         )
         sys.exit(1)
 

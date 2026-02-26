@@ -83,64 +83,160 @@ def state_with_offers(basic_state: AgentState) -> AgentState:
 
 
 @pytest.fixture
-def env_vars():
-    """Set required environment variables for LLM config."""
+def agent_env():
+    """Set per-agent environment variables (strict isolation)."""
     env = {
-        "OPENROUTER_API_KEY": "sk-or-test-key",
-        "DEFAULT_MODEL": "test-model",
-        "DEFAULT_MAX_TOKENS": "400",
-        "DEFAULT_TEMPERATURE": "0.7",
+        "FARMER_API_KEY": "sk-farmer-key",
+        "FARMER_MODEL": "farmer-model",
+    }
+    # Remove any per-agent overrides that may leak from .env
+    clean = {k: v for k, v in os.environ.items() if not k.startswith("FARMER_MAX") and not k.startswith("FARMER_TEMP")}
+    with patch.dict(os.environ, {**clean, **env}, clear=True):
+        yield env
+
+
+@pytest.fixture
+def service_env():
+    """Set shared service environment variables."""
+    env = {
+        "OPENROUTER_API_KEY": "sk-or-shared-key",
+        "DEFAULT_MODEL": "shared-model",
     }
     with patch.dict(os.environ, env, clear=False):
         yield env
 
 
 # ---------------------------------------------------------------------------
-# LLMConfig tests
+# LLMConfig tests — strict agent isolation
 # ---------------------------------------------------------------------------
 
 
-class TestLLMConfig:
-    def test_for_agent_loads_env(self, env_vars):
+class TestLLMConfigAgent:
+    """for_agent() enforces strict isolation: per-agent key + model required."""
+
+    def test_loads_per_agent_config(self, agent_env):
         config = LLMConfig.for_agent("farmer-01")
-        assert config.api_key == "sk-or-test-key"
-        assert config.model == "test-model"
+        assert config.api_key == "sk-farmer-key"
+        assert config.model == "farmer-model"
         assert config.max_tokens == 400
         assert config.temperature == 0.7
         assert "openrouter" in config.api_base
 
-    def test_for_agent_uses_per_agent_model(self, env_vars):
-        with patch.dict(os.environ, {"FARMER_MODEL": "custom-model"}):
-            config = LLMConfig.for_agent("farmer-01")
-            assert config.model == "custom-model"
-
-    def test_for_agent_per_agent_max_tokens(self, env_vars):
+    def test_per_agent_max_tokens(self, agent_env):
         with patch.dict(os.environ, {"FARMER_MAX_TOKENS": "200"}):
             config = LLMConfig.for_agent("farmer-01")
             assert config.max_tokens == 200
 
-    def test_for_agent_per_agent_temperature(self, env_vars):
+    def test_per_agent_temperature(self, agent_env):
         with patch.dict(os.environ, {"FARMER_TEMPERATURE": "0.3"}):
             config = LLMConfig.for_agent("farmer-01")
             assert config.temperature == 0.3
 
-    def test_for_agent_raises_without_api_key(self):
-        with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(KeyError):
-                LLMConfig.for_agent("farmer-01")
+    def test_per_agent_api_base(self, agent_env):
+        with patch.dict(os.environ, {"FARMER_API_BASE": "https://custom.ai/v1"}):
+            config = LLMConfig.for_agent("farmer-01")
+            assert config.api_base == "https://custom.ai/v1"
 
-    def test_for_agent_raises_on_empty_model(self):
-        env = {"OPENROUTER_API_KEY": "sk-or-test"}
+    def test_api_base_defaults_to_openrouter(self, agent_env):
+        config = LLMConfig.for_agent("farmer-01")
+        assert "openrouter" in config.api_base
+
+    # --- Strict isolation enforcement ---
+
+    def test_raises_without_agent_api_key(self):
+        """Agent MUST have its own key — no shared fallback."""
+        env = {"OPENROUTER_API_KEY": "sk-shared", "FARMER_MODEL": "m"}
         with patch.dict(os.environ, env, clear=True):
-            with pytest.raises(ValueError, match="LLM model is empty"):
+            with pytest.raises(KeyError, match="FARMER_API_KEY"):
                 LLMConfig.for_agent("farmer-01")
 
-    def test_for_service_loads_env(self, env_vars):
-        config = LLMConfig.for_service("town_crier")
-        assert config.api_key == "sk-or-test-key"
-        assert config.model == "test-model"
+    def test_raises_without_agent_model(self):
+        """Agent MUST have its own model — no shared fallback."""
+        env = {"FARMER_API_KEY": "sk-key", "DEFAULT_MODEL": "shared-m"}
+        with patch.dict(os.environ, env, clear=True):
+            with pytest.raises(ValueError, match="FARMER_MODEL"):
+                LLMConfig.for_agent("farmer-01")
 
-    def test_for_service_per_service_model(self, env_vars):
+    def test_shared_key_alone_is_not_enough(self):
+        """OPENROUTER_API_KEY without per-agent key must fail."""
+        env = {"OPENROUTER_API_KEY": "sk-shared", "DEFAULT_MODEL": "m"}
+        with patch.dict(os.environ, env, clear=True):
+            with pytest.raises(KeyError, match="FARMER_API_KEY"):
+                LLMConfig.for_agent("farmer-01")
+
+    def test_shared_model_alone_is_not_enough(self):
+        """DEFAULT_MODEL without per-agent model must fail."""
+        env = {"FARMER_API_KEY": "sk-key", "DEFAULT_MODEL": "m"}
+        with patch.dict(os.environ, env, clear=True):
+            with pytest.raises(ValueError, match="FARMER_MODEL"):
+                LLMConfig.for_agent("farmer-01")
+
+    def test_completely_empty_env_raises(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with pytest.raises(KeyError, match="FARMER_API_KEY"):
+                LLMConfig.for_agent("farmer-01")
+
+    # --- Multi-agent isolation ---
+
+    def test_different_agents_different_keys(self):
+        env = {
+            "FARMER_API_KEY": "sk-farmer", "FARMER_MODEL": "m-farmer",
+            "CHEF_API_KEY": "sk-chef", "CHEF_MODEL": "m-chef",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            farmer = LLMConfig.for_agent("farmer-01")
+            chef = LLMConfig.for_agent("chef-01")
+            assert farmer.api_key == "sk-farmer"
+            assert chef.api_key == "sk-chef"
+            assert farmer.model == "m-farmer"
+            assert chef.model == "m-chef"
+
+    def test_different_agents_different_providers(self):
+        env = {
+            "FARMER_API_KEY": "sk-openai-xxx",
+            "FARMER_API_BASE": "https://api.openai.com/v1",
+            "FARMER_MODEL": "gpt-4o-mini",
+            "CHEF_API_KEY": "sk-anthropic-yyy",
+            "CHEF_API_BASE": "https://api.anthropic.com/v1",
+            "CHEF_MODEL": "claude-sonnet-4-6",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            farmer = LLMConfig.for_agent("farmer-01")
+            chef = LLMConfig.for_agent("chef-01")
+            assert farmer.api_key == "sk-openai-xxx"
+            assert farmer.api_base == "https://api.openai.com/v1"
+            assert farmer.model == "gpt-4o-mini"
+            assert chef.api_key == "sk-anthropic-yyy"
+            assert chef.api_base == "https://api.anthropic.com/v1"
+            assert chef.model == "claude-sonnet-4-6"
+
+    def test_one_agent_missing_key_fails_independently(self):
+        """One agent configured, another missing key — only the missing one fails."""
+        env = {
+            "FARMER_API_KEY": "sk-farmer", "FARMER_MODEL": "m",
+            "CHEF_MODEL": "m",  # chef has model but no key
+        }
+        with patch.dict(os.environ, env, clear=True):
+            config = LLMConfig.for_agent("farmer-01")
+            assert config.api_key == "sk-farmer"
+            with pytest.raises(KeyError, match="CHEF_API_KEY"):
+                LLMConfig.for_agent("chef-01")
+
+
+class TestLLMConfigService:
+    """for_service() allows shared defaults — services are infrastructure."""
+
+    def test_service_uses_shared_key(self, service_env):
+        config = LLMConfig.for_service("town_crier")
+        assert config.api_key == "sk-or-shared-key"
+        assert config.model == "shared-model"
+
+    def test_service_per_service_key_overrides_shared(self, service_env):
+        with patch.dict(os.environ, {"TOWN_CRIER_API_KEY": "sk-crier-own"}):
+            config = LLMConfig.for_service("town_crier")
+            assert config.api_key == "sk-crier-own"
+
+    def test_service_per_service_model(self, service_env):
         with patch.dict(os.environ, {"TOWN_CRIER_MODEL": "narrator-model"}):
             config = LLMConfig.for_service("town_crier")
             assert config.model == "narrator-model"
@@ -457,7 +553,7 @@ class TestAgentLLMBrain:
         brain._llm = MagicMock(ainvoke=mock_response)
 
     async def test_decide_calls_llm_and_returns_actions(
-        self, brain, basic_state, env_vars,
+        self, brain, basic_state, agent_env,
     ):
         plan = ActionPlan(
             reasoning="Gathering potatoes this tick",
@@ -470,7 +566,7 @@ class TestAgentLLMBrain:
         assert actions[0].kind == ActionKind.GATHER
 
     async def test_decide_returns_empty_on_llm_error(
-        self, brain, basic_state, env_vars,
+        self, brain, basic_state, agent_env,
     ):
         self._inject_mock(brain, side_effect=Exception("API timeout"))
 
@@ -480,13 +576,13 @@ class TestAgentLLMBrain:
     async def test_decide_returns_empty_on_config_error(
         self, brain, basic_state,
     ):
-        # No OPENROUTER_API_KEY set — _get_llm raises
+        # No FARMER_API_KEY set — _get_llm raises KeyError
         with patch.dict(os.environ, {}, clear=True):
             actions = await brain.decide(basic_state)
         assert actions == []
 
     async def test_decide_validates_llm_output(
-        self, brain, basic_state, env_vars,
+        self, brain, basic_state, agent_env,
     ):
         plan = ActionPlan(
             reasoning="Let's do impossible things",
@@ -503,7 +599,7 @@ class TestAgentLLMBrain:
         assert actions[0].kind == ActionKind.GATHER
 
     async def test_decide_multiple_valid_actions(
-        self, brain, basic_state, env_vars,
+        self, brain, basic_state, agent_env,
     ):
         plan = ActionPlan(
             reasoning="Gather and sell",
@@ -514,7 +610,7 @@ class TestAgentLLMBrain:
         actions = await brain.decide(basic_state)
         assert len(actions) == 2
 
-    async def test_decide_empty_plan(self, brain, basic_state, env_vars):
+    async def test_decide_empty_plan(self, brain, basic_state, agent_env):
         plan = ActionPlan(reasoning="Nothing useful to do", actions=[])
         self._inject_mock(brain, mock_plan=plan)
 
@@ -522,7 +618,7 @@ class TestAgentLLMBrain:
         assert actions == []
 
     async def test_decide_handles_markdown_wrapped_json(
-        self, brain, basic_state, env_vars,
+        self, brain, basic_state, agent_env,
     ):
         """LLMs sometimes wrap JSON in markdown code blocks."""
         plan_data = {"reasoning": "Gathering", "actions": [
@@ -537,7 +633,7 @@ class TestAgentLLMBrain:
         assert actions[0].kind == ActionKind.GATHER
 
     async def test_decide_handles_text_before_json(
-        self, brain, basic_state, env_vars,
+        self, brain, basic_state, agent_env,
     ):
         """Reasoning models may emit thinking text before JSON."""
         plan_data = {"reasoning": "test", "actions": []}
@@ -549,7 +645,7 @@ class TestAgentLLMBrain:
         assert actions == []  # empty plan, no error
 
     async def test_client_cached_across_calls(
-        self, brain, basic_state, env_vars,
+        self, brain, basic_state, agent_env,
     ):
         """The LLM client should be created once and reused."""
         plan = ActionPlan(reasoning="test", actions=[])
@@ -632,7 +728,9 @@ class TestMarketRules:
 
     def test_market_rules_contains_json_format(self):
         assert "JSON" in MARKET_RULES
-        assert "reasoning" in MARKET_RULES
+        assert "thoughts" in MARKET_RULES
+        assert "speech" in MARKET_RULES
+        assert "mood" in MARKET_RULES
 
     def test_valid_kinds_complete(self):
         assert VALID_KINDS == {"gather", "offer", "bid", "accept", "craft_start", "consume"}
@@ -660,3 +758,68 @@ class TestSchemas:
         action = AgentAction(kind="offer", params={"item": "potato", "quantity": 5})
         assert action.kind == "offer"
         assert action.params["item"] == "potato"
+
+
+# ---------------------------------------------------------------------------
+# BF-1: Storage validation in GATHER
+# ---------------------------------------------------------------------------
+
+
+class TestGatherStorageValidation:
+    """BF-1: validate_action should reject GATHER when storage is full."""
+
+    def test_gather_rejected_when_storage_full(self):
+        state = AgentState(agent_id="farmer-01")
+        state.energy = 80
+        state.current_spawn_id = "spawn-abc"
+        state.current_spawn_items = {"potato": 10}
+        state.inventory = {"potato": 50}
+        state.storage_limit = 50
+        action = AgentAction(kind="gather", params={"spawn_id": "spawn-abc", "item": "potato", "quantity": 5})
+        result = validate_action(action, state)
+        assert result is None
+
+    def test_gather_capped_to_remaining_storage(self):
+        state = AgentState(agent_id="farmer-01")
+        state.energy = 80
+        state.current_spawn_id = "spawn-abc"
+        state.current_spawn_items = {"potato": 10}
+        state.inventory = {"potato": 47}
+        state.storage_limit = 50
+        action = AgentAction(kind="gather", params={"spawn_id": "spawn-abc", "item": "potato", "quantity": 5})
+        result = validate_action(action, state)
+        assert result is not None
+        assert result.params["quantity"] == 3
+
+    def test_gather_full_quantity_when_storage_available(self):
+        state = AgentState(agent_id="farmer-01")
+        state.energy = 80
+        state.current_spawn_id = "spawn-abc"
+        state.current_spawn_items = {"potato": 10}
+        state.inventory = {"potato": 5}
+        state.storage_limit = 50
+        action = AgentAction(kind="gather", params={"spawn_id": "spawn-abc", "item": "potato", "quantity": 5})
+        result = validate_action(action, state)
+        assert result is not None
+        assert result.params["quantity"] == 5
+
+
+# ---------------------------------------------------------------------------
+# Spoilage and confiscation in serialize_state
+# ---------------------------------------------------------------------------
+
+
+class TestSerializeStateSpoilageConfiscation:
+    def test_spoilage_alert_in_state(self):
+        state = AgentState(agent_id="farmer-01")
+        state.spoiled_this_tick = [{"item": "potato", "quantity": 5}]
+        text = serialize_state(state)
+        assert "SPOILAGE ALERT" in text
+        assert "5x potato" in text
+
+    def test_confiscation_alert_in_state(self):
+        state = AgentState(agent_id="farmer-01")
+        state.confiscated_this_tick = {"onion": 3}
+        text = serialize_state(state)
+        assert "CONFISCATION" in text
+        assert "3x onion" in text

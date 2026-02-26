@@ -92,7 +92,8 @@ class TestBankruptcyDetection:
         state.current_tick = 10 + BANKRUPTCY_GRACE_PERIOD
         assert state.check_bankruptcy("a")
 
-    def test_no_bankruptcy_if_has_inventory(self) -> None:
+    def test_bankruptcy_even_with_inventory(self) -> None:
+        """Inventory doesn't prevent bankruptcy — assets get liquidated."""
         state = _setup_agent("a")
         state.current_tick = 10
         state.record_zero_wallet("a")
@@ -101,7 +102,7 @@ class TestBankruptcyDetection:
         account.wallet = 0.0
         state.credit_inventory("a", "potato", 5)
         state.current_tick = 10 + BANKRUPTCY_GRACE_PERIOD
-        assert not state.check_bankruptcy("a")
+        assert state.check_bankruptcy("a")
 
     def test_already_bankrupt_returns_true(self) -> None:
         state = _setup_agent("a")

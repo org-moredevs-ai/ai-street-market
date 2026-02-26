@@ -19,6 +19,21 @@ Hardcoded strategies (`decide_hardcoded`) exist ONLY as test fixtures, never as 
 When adding new agents or services, LLM integration is mandatory from day one.
 The test suite enforces this — see `tests/test_ai_guardrails.py`.
 
+## Agent Isolation Principle (ARCHITECTURAL BOUNDARY)
+Agents are EXTERNAL participants. The `agents/` directory contains seed/example
+agents that bootstrap the economy and serve as reference implementations.
+They are NOT part of the market infrastructure.
+
+Anyone can build an agent in ANY language. Agents only need:
+1. A NATS connection
+2. Knowledge of the protocol (see `docs/PROTOCOL.md`)
+
+The market infrastructure (Governor, Banker, World, Town Crier) enforces all rules.
+Agents cannot cheat — they are untrusted by design.
+
+See `docs/BUILDING_AN_AGENT.md` for the getting started guide.
+See `templates/` for minimal starter agents.
+
 ## Key Conventions
 - Python 3.12+ required
 - All services import `from streetmarket import ...`
@@ -66,10 +81,10 @@ Message types:
 
 ## Economy Mechanics
 - **Energy:** Actions cost energy (gather=10, craft=15, trade=5). Regenerates 5/tick. Food restores energy (soup=30, bread=20).
-- **Rent:** 2 coins/tick after 20-tick grace period. House ownership exempts agents.
+- **Rent:** 0.5 coins/tick after 50-tick grace period. House ownership exempts agents.
 - **Storage:** Base limit 50 items + 10 per shelf owned (max 3 shelves = 80).
-- **Bankruptcy:** 5 consecutive ticks at zero wallet + zero inventory value = bankrupt (blocked from trading).
-- **LLM Nature:** Optional Claude Haiku integration for dynamic resource spawns (opt-in via `WORLD_USE_LLM_NATURE` env var).
+- **Bankruptcy:** 15 consecutive ticks at zero wallet = bankrupt (blocked from trading). Inventory doesn't prevent bankruptcy — assets are liquidated via confiscation.
+- **LLM Nature:** LLM-powered nature intelligence for dynamic resource spawns and nature events.
 
 ## Project Structure
 ```
@@ -90,7 +105,9 @@ services/              — Market infrastructure
   banker/              — Settles trades, manages wallets/inventory, rent, bankruptcy
   world/               — Tick engine, resource spawns, energy authority, LLM nature
 infrastructure/        — Docker Compose + NATS config
-tests/                 — All tests (631 Python + 22 TypeScript)
+templates/             — Agent starter templates (Python + TypeScript)
+docs/                  — Protocol spec, getting started guide
+tests/                 — All tests (894 Python + 50 TypeScript)
 scripts/               — Dev scripts, demos, economy runner
 sessions/              — Development session journal (see below)
 references/            — Roadmap and design docs

@@ -29,6 +29,9 @@ class MessageType(StrEnum):
     BANKRUPTCY = "bankruptcy"
     NATURE_EVENT = "nature_event"
     NARRATION = "narration"
+    AGENT_STATUS = "agent_status"
+    ITEM_SPOILED = "item_spoiled"
+    ECONOMY_HALT = "economy_halt"
 
 
 class MarketWeather(StrEnum):
@@ -105,6 +108,7 @@ class Heartbeat(BaseModel):
     agent_id: str
     wallet: float
     inventory_count: int
+    inventory: dict[str, int] = Field(default_factory=dict)
 
 
 class Tick(BaseModel):
@@ -124,6 +128,8 @@ class Settlement(BaseModel):
     quantity: int = Field(gt=0)
     total_price: float = Field(gt=0)
     status: str = "completed"
+    buyer_wallet_after: float | None = None
+    seller_wallet_after: float | None = None
 
 
 class ValidationResult(BaseModel):
@@ -198,6 +204,9 @@ class RentDue(BaseModel):
     wallet_after: float
     exempt: bool = False
     reason: str | None = None
+    treasury_balance: float | None = None
+    total_rent_collected: float | None = None
+    confiscated_items: dict[str, int] | None = None
 
 
 class Bankruptcy(BaseModel):
@@ -230,6 +239,31 @@ class Narration(BaseModel):
     window_end_tick: int = Field(ge=0)
 
 
+class AgentStatus(BaseModel):
+    """Agent's inner state after an LLM decision — thoughts, speech, mood."""
+
+    agent_id: str
+    thoughts: str = Field(max_length=300)
+    speech: str = Field(max_length=200)
+    mood: str = Field(max_length=20)
+    action_count: int = Field(ge=0, default=0)
+
+
+class ItemSpoiled(BaseModel):
+    """Banker notifies that items have spoiled in an agent's inventory."""
+
+    agent_id: str
+    item: str
+    quantity: int = Field(gt=0)
+
+
+class EconomyHalt(BaseModel):
+    """Banker declares the economy halted — all agents are bankrupt."""
+
+    reason: str
+    final_tick: int
+
+
 # Registry mapping message types to their payload models
 PAYLOAD_REGISTRY: dict[MessageType, type[BaseModel]] = {
     MessageType.OFFER: Offer,
@@ -253,4 +287,7 @@ PAYLOAD_REGISTRY: dict[MessageType, type[BaseModel]] = {
     MessageType.BANKRUPTCY: Bankruptcy,
     MessageType.NATURE_EVENT: NatureEvent,
     MessageType.NARRATION: Narration,
+    MessageType.AGENT_STATUS: AgentStatus,
+    MessageType.ITEM_SPOILED: ItemSpoiled,
+    MessageType.ECONOMY_HALT: EconomyHalt,
 }

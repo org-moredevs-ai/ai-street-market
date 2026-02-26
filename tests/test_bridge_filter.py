@@ -37,12 +37,13 @@ class TestClassifyMessage:
             MessageType.SPAWN,
             MessageType.GATHER_RESULT,
             MessageType.CONSUME_RESULT,
+            MessageType.HEARTBEAT,
         ]
         for mt in medium:
             assert classify_message(mt) == "forward_medium", f"{mt} should be forward_medium"
 
     def test_state_only_messages(self) -> None:
-        state_only = [MessageType.HEARTBEAT, MessageType.VALIDATION_RESULT]
+        state_only = [MessageType.VALIDATION_RESULT]
         for mt in state_only:
             assert classify_message(mt) == "state_only", f"{mt} should be state_only"
 
@@ -81,7 +82,6 @@ class TestShouldForward:
         assert should_forward(MessageType.BID) is True
 
     def test_does_not_forward_state_only(self) -> None:
-        assert should_forward(MessageType.HEARTBEAT) is False
         assert should_forward(MessageType.VALIDATION_RESULT) is False
 
     def test_does_not_forward_ignored(self) -> None:
@@ -106,3 +106,11 @@ class TestShouldUpdateState:
 
     def test_unknown_type_does_not_update(self) -> None:
         assert should_update_state("unknown_msg_type") is False
+
+
+class TestItemSpoiledClassification:
+    def test_item_spoiled_forward_high(self) -> None:
+        assert classify_message(MessageType.ITEM_SPOILED) == "forward_high"
+
+    def test_item_spoiled_should_forward(self) -> None:
+        assert should_forward(MessageType.ITEM_SPOILED) is True

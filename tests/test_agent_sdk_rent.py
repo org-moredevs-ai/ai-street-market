@@ -1,6 +1,11 @@
 """Tests for Agent SDK updates — rent, bankruptcy, storage, nature events."""
 
+from unittest.mock import AsyncMock, patch
+
+from streetmarket.agent.base import TradingAgent
 from streetmarket.agent.state import AgentState
+from streetmarket.models.envelope import Envelope
+from streetmarket.models.messages import MessageType
 from streetmarket.models.rent import STORAGE_BASE_LIMIT, STORAGE_MAX_SHELVES, STORAGE_PER_SHELF
 
 # ── AgentState new fields ──────────────────────────────────────────────────
@@ -84,3 +89,59 @@ class TestStorageLimitWithShelves:
             storage_limit=max_storage,
         )
         assert state.storage_remaining() == 80
+
+
+# ── Bankruptcy stops agent ──────────────────────────────────────────────────
+
+
+def _make_envelope(msg_type: str, payload: dict, from_agent: str = "banker") -> Envelope:
+    return Envelope(
+        id="test-id",
+        from_agent=from_agent,
+        topic="/market/bank",
+        timestamp=1000.0,
+        tick=10,
+        type=msg_type,
+        payload=payload,
+    )
+
+
+class _TestAgent(TradingAgent):
+    AGENT_ID = "farmer-01"
+    AGENT_NAME = "Farmer Joe"
+    AGENT_DESCRIPTION = "Test farmer"
+
+    async def decide(self, state: AgentState) -> list:
+        return []
+
+
+class TestBankruptcyStopsAgent:
+    async def test_bankruptcy_calls_stop(self) -> None:
+        agent = _TestAgent.__new__(_TestAgent)
+        agent._state = AgentState(agent_id="farmer-01")
+        agent._running = True
+        agent.stop = AsyncMock()
+
+        env = _make_envelope(
+            MessageType.BANKRUPTCY,
+            {"agent_id": "farmer-01", "reason": "Zero wallet since tick 50"},
+        )
+        await agent._on_bank(env)
+
+        assert agent._state.is_bankrupt is True
+        agent.stop.assert_called_once()
+
+    async def test_other_agents_bankruptcy_does_not_stop(self) -> None:
+        agent = _TestAgent.__new__(_TestAgent)
+        agent._state = AgentState(agent_id="farmer-01")
+        agent._running = True
+        agent.stop = AsyncMock()
+
+        env = _make_envelope(
+            MessageType.BANKRUPTCY,
+            {"agent_id": "chef-01", "reason": "Zero wallet since tick 50"},
+        )
+        await agent._on_bank(env)
+
+        assert agent._state.is_bankrupt is False
+        agent.stop.assert_not_called()

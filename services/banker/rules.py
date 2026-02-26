@@ -146,6 +146,14 @@ def process_accept(envelope: Envelope, state: BankerState) -> TradeResult:
         result.errors.append("Self-trade not allowed")
         return result
 
+    # Reject trades involving bankrupt agents
+    if state.is_bankrupt(buyer):
+        result.errors.append(f"Buyer '{buyer}' is bankrupt")
+        return result
+    if state.is_bankrupt(seller):
+        result.errors.append(f"Seller '{seller}' is bankrupt")
+        return result
+
     # Determine trade quantity (partial fill support)
     trade_qty = min(accept_qty, order.quantity)
     total_price = trade_qty * order.price_per_unit
@@ -190,7 +198,9 @@ def process_accept(envelope: Envelope, state: BankerState) -> TradeResult:
     state.debit_wallet(buyer, total_price)
     state.credit_wallet(seller, total_price)
     state.debit_inventory(seller, item, trade_qty)
-    state.credit_inventory(buyer, item, trade_qty)
+    state.credit_inventory(buyer, item, trade_qty, tick=state.current_tick)
+    # Track settlement price for confiscation calculations
+    state.record_settlement_price(item, order.price_per_unit)
 
     # Update order book (reduce or remove)
     state.reduce_order(ref_id, trade_qty)
@@ -244,6 +254,9 @@ def process_gather_result(envelope: Envelope, state: BankerState) -> list[str]:
     if not agent_id:
         return ["Missing agent_id in GATHER_RESULT"]
 
+    if state.is_bankrupt(agent_id):
+        return ["Agent is bankrupt"]
+
     if quantity <= 0:
         return [f"Invalid quantity {quantity} in GATHER_RESULT"]
 
@@ -260,7 +273,7 @@ def process_gather_result(envelope: Envelope, state: BankerState) -> list[str]:
             f"{state.get_storage_limit(agent_id)})"
         ]
 
-    state.credit_inventory(agent_id, item, quantity)
+    state.credit_inventory(agent_id, item, quantity, tick=state.current_tick)
     return []
 
 
@@ -286,7 +299,7 @@ def process_craft_complete(envelope: Envelope, state: BankerState) -> list[str]:
 
     # Credit all outputs to inventory
     for item, qty in outputs.items():
-        state.credit_inventory(agent_id, item, qty)
+        state.credit_inventory(agent_id, item, qty, tick=state.current_tick)
 
     return []
 
@@ -343,11 +356,13 @@ class RentResultData:
     wallet_after: float = 0.0
     exempt: bool = False
     reason: str | None = None
+    confiscated_items: dict[str, int] | None = None
 
 
 def process_rent(agent_id: str, state: BankerState) -> RentResultData:
     """Process rent for a single agent. Pure function.
 
+    If the agent can't afford rent, confiscates inventory at fire-sale prices.
     Returns RentResultData describing what happened.
     """
     result = RentResultData(agent_id=agent_id)
@@ -375,17 +390,29 @@ def process_rent(agent_id: str, state: BankerState) -> RentResultData:
         state.debit_wallet(agent_id, rent)
         result.amount = rent
         result.wallet_after = account.wallet
+        state.town_treasury += rent
+        state.total_rent_collected += rent
         # Wallet is now positive, clear zero-wallet tracking
         if account.wallet > 0:
             state.clear_zero_wallet(agent_id)
         else:
             state.record_zero_wallet(agent_id)
     else:
-        # Can't afford full rent — take what's available
+        # Can't afford full rent — take what's available from wallet
         taken = account.wallet
         state.debit_wallet(agent_id, taken)
-        result.amount = taken
+        remaining_debt = rent - taken
+
+        # BF-3: Confiscate inventory to cover remaining debt
+        conf = state.confiscate_for_rent(agent_id, remaining_debt)
+        if conf.confiscated_items:
+            result.confiscated_items = conf.confiscated_items
+
+        result.amount = taken + min(remaining_debt, conf.debt_covered)
         result.wallet_after = 0.0
+        # Treasury was already credited inside confiscate_for_rent; add wallet portion
+        state.town_treasury += taken
+        state.total_rent_collected += taken
         state.record_zero_wallet(agent_id)
 
     return result

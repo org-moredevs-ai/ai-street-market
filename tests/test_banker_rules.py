@@ -3,6 +3,8 @@
 from streetmarket import Envelope, MessageType
 
 from services.banker.rules import (
+    RentResultData,
+    check_all_bankruptcies,
     process_accept,
     process_bid,
     process_consume,
@@ -11,6 +13,7 @@ from services.banker.rules import (
     process_gather_result,
     process_join,
     process_offer,
+    process_rent,
 )
 from services.banker.state import STARTING_WALLET, BankerState
 
@@ -783,3 +786,190 @@ class TestProcessConsume:
         result = process_consume(env, state)
         assert result.errors == []
         assert result.quantity == 1
+
+
+# ---------------------------------------------------------------------------
+# BF-3: Rent confiscation
+# ---------------------------------------------------------------------------
+
+
+class TestRentConfiscation:
+    """BF-3: When wallet=0, confiscate inventory at fire-sale prices."""
+
+    def test_confiscate_cheapest_items_first(self):
+        state = BankerState(current_tick=60)
+        state.create_account("farmer-01", wallet=0.0)
+        state.credit_inventory("farmer-01", "onion", 10)  # base_price 2.0
+        state.credit_inventory("farmer-01", "wood", 5)    # base_price 3.0
+        state._join_ticks["farmer-01"] = 1
+
+        result = process_rent("farmer-01", state)
+        # Rent = 0.5, wallet = 0, so confiscation kicks in
+        assert result.confiscated_items is not None
+        # Cheapest = nails(1.0) but farmer has onion(2.0) and wood(3.0)
+        # Onion confiscation price = 2.0 * 0.70 = 1.40
+        # 1 onion covers 1.40 >= 0.50 debt
+        assert "onion" in result.confiscated_items
+        assert result.confiscated_items["onion"] == 1
+
+    def test_confiscation_30_percent_deductible(self):
+        state = BankerState(current_tick=60)
+        state.create_account("farmer-01", wallet=0.0)
+        state.credit_inventory("farmer-01", "potato", 100)
+        state._join_ticks["farmer-01"] = 1
+
+        # Record a settlement price of 3.0 per potato
+        state.record_settlement_price("potato", 3.0)
+        conf_price = state.get_confiscation_price("potato")
+        assert conf_price == 3.0 * 0.70  # 2.10
+
+    def test_round_up_to_whole_units(self):
+        state = BankerState(current_tick=60)
+        state.create_account("farmer-01", wallet=0.0)
+        # Stone base price = 4.0, confiscation = 2.80
+        # Rent = 0.5, need ceil(0.5 / 2.80) = 1 unit
+        state.credit_inventory("farmer-01", "stone", 5)
+        state._join_ticks["farmer-01"] = 1
+
+        result = process_rent("farmer-01", state)
+        assert result.confiscated_items is not None
+        assert result.confiscated_items.get("stone") == 1
+
+    def test_multiple_item_types_confiscated(self):
+        state = BankerState(current_tick=60)
+        state.create_account("farmer-01", wallet=0.0)
+        # Very cheap items to force multi-item confiscation
+        # Record very low settlement prices
+        state.record_settlement_price("nails", 0.10)
+        state.credit_inventory("farmer-01", "nails", 2)
+        state.credit_inventory("farmer-01", "potato", 10)
+        state._join_ticks["farmer-01"] = 1
+
+        result = process_rent("farmer-01", state)
+        assert result.confiscated_items is not None
+        # nails confiscation = 0.10 * 0.70 = 0.07 per unit
+        # 2 nails = 0.14, not enough for 0.5 rent
+        # Then potato at base 2.0 * 0.70 = 1.40
+        # 1 potato covers remainder
+        total_items = sum(result.confiscated_items.values())
+        assert total_items >= 2  # At least nails + potato
+
+    def test_falls_back_to_base_price_no_settlements(self):
+        state = BankerState(current_tick=60)
+        # No settlement prices recorded — should use base_price
+        price = state.get_confiscation_price("potato")
+        assert price == 2.0 * 0.70  # base_price * (1 - 0.30)
+
+    def test_remaining_debt_when_inventory_runs_out(self):
+        state = BankerState(current_tick=60)
+        state.create_account("farmer-01", wallet=0.0)
+        # Very low value items — 1 nail at confiscation price 0.07
+        state.record_settlement_price("nails", 0.10)
+        state.credit_inventory("farmer-01", "nails", 1)
+        state._join_ticks["farmer-01"] = 1
+
+        result = process_rent("farmer-01", state)
+        # 1 nail at 0.07 can't cover 0.5 rent
+        assert result.confiscated_items is not None
+        assert result.confiscated_items["nails"] == 1
+        # Agent should still have zero wallet tracked
+        assert state.get_zero_wallet_since("farmer-01") > 0
+
+    def test_no_confiscation_when_wallet_covers_rent(self):
+        state = BankerState(current_tick=60)
+        state.create_account("farmer-01", wallet=10.0)
+        state.credit_inventory("farmer-01", "potato", 50)
+        state._join_ticks["farmer-01"] = 1
+
+        result = process_rent("farmer-01", state)
+        assert result.confiscated_items is None
+        assert result.amount == 0.5
+
+
+# ---------------------------------------------------------------------------
+# Spoilage — Banker state batch tracking
+# ---------------------------------------------------------------------------
+
+
+class TestBankerSpoilage:
+    """Phase 1: Batch tracking and spoilage in BankerState."""
+
+    def test_credit_with_tick_creates_batch(self):
+        state = BankerState(current_tick=10)
+        state.create_account("farmer-01")
+        state.credit_inventory("farmer-01", "potato", 5, tick=10)
+        account = state.get_account("farmer-01")
+        assert account is not None
+        assert len(account._batches) == 1
+        assert account._batches[0].item == "potato"
+        assert account._batches[0].quantity == 5
+        assert account._batches[0].created_tick == 10
+
+    def test_non_perishable_no_batch(self):
+        state = BankerState(current_tick=10)
+        state.create_account("farmer-01")
+        state.credit_inventory("farmer-01", "wood", 5, tick=10)
+        account = state.get_account("farmer-01")
+        assert account is not None
+        assert len(account._batches) == 0
+
+    def test_debit_inventory_fifo(self):
+        state = BankerState(current_tick=10)
+        state.create_account("farmer-01")
+        state.credit_inventory("farmer-01", "potato", 3, tick=5)
+        state.credit_inventory("farmer-01", "potato", 5, tick=8)
+        # Debit 4 — should consume all 3 from batch 1 and 1 from batch 2
+        state.debit_inventory("farmer-01", "potato", 4)
+        account = state.get_account("farmer-01")
+        assert account is not None
+        assert account.inventory["potato"] == 4
+        # Only batch from tick 8 should remain, with qty=4
+        assert len(account._batches) == 1
+        assert account._batches[0].created_tick == 8
+        assert account._batches[0].quantity == 4
+
+    def test_process_spoilage_removes_expired(self):
+        state = BankerState(current_tick=110)  # potato spoils at 100 ticks
+        state.create_account("farmer-01")
+        state.credit_inventory("farmer-01", "potato", 5, tick=5)  # age = 105 > 100
+        results = state.process_spoilage()
+        assert len(results) == 1
+        assert results[0].agent_id == "farmer-01"
+        assert results[0].item == "potato"
+        assert results[0].quantity == 5
+        assert state.get_account("farmer-01").inventory.get("potato", 0) == 0  # type: ignore
+
+    def test_process_spoilage_keeps_fresh(self):
+        state = BankerState(current_tick=50)
+        state.create_account("farmer-01")
+        state.credit_inventory("farmer-01", "potato", 5, tick=10)  # age = 40 < 100
+        results = state.process_spoilage()
+        assert len(results) == 0
+        assert state.get_account("farmer-01").inventory.get("potato", 0) == 5  # type: ignore
+
+    def test_process_spoilage_partial_batches(self):
+        state = BankerState(current_tick=110)
+        state.create_account("farmer-01")
+        state.credit_inventory("farmer-01", "potato", 3, tick=5)   # age 105 > 100 → spoils
+        state.credit_inventory("farmer-01", "potato", 5, tick=50)  # age 60 < 100 → fresh
+        results = state.process_spoilage()
+        assert len(results) == 1
+        assert results[0].quantity == 3
+        assert state.get_account("farmer-01").inventory.get("potato", 0) == 5  # type: ignore
+
+    def test_non_perishable_never_spoils(self):
+        state = BankerState(current_tick=9999)
+        state.create_account("farmer-01")
+        state.credit_inventory("farmer-01", "wood", 10, tick=1)
+        results = state.process_spoilage()
+        assert len(results) == 0
+        assert state.get_account("farmer-01").inventory.get("wood", 0) == 10  # type: ignore
+
+    def test_backward_compat_credit_without_tick(self):
+        state = BankerState(current_tick=10)
+        state.create_account("farmer-01")
+        state.credit_inventory("farmer-01", "potato", 5)  # no tick
+        account = state.get_account("farmer-01")
+        assert account is not None
+        assert account.inventory["potato"] == 5
+        assert len(account._batches) == 0  # no batch created

@@ -32,6 +32,7 @@ export interface AgentState {
   observedOffers: ObservedOffer[];
   actionsThisTick: number;
   energy: number;
+  isBankrupt: boolean;
 }
 
 export function createInitialState(agentId: string): AgentState {
@@ -48,6 +49,7 @@ export function createInitialState(agentId: string): AgentState {
     observedOffers: [],
     actionsThisTick: 0,
     energy: 100,
+    isBankrupt: false,
   };
 }
 

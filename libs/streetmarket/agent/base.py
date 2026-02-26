@@ -1,5 +1,6 @@
 """TradingAgent — base class for all trading agents in the AI Street Market."""
 
+import asyncio
 import logging
 from abc import ABC, abstractmethod
 
@@ -12,6 +13,7 @@ from streetmarket.models.catalogue import RECIPES
 from streetmarket.models.envelope import Envelope
 from streetmarket.models.messages import (
     Accept,
+    AgentStatus,
     Bid,
     Consume,
     CraftComplete,
@@ -25,6 +27,7 @@ from streetmarket.models.messages import (
     Settlement,
     Spawn,
     Tick,
+    ValidationResult,
 )
 from streetmarket.models.rent import STORAGE_BASE_LIMIT, STORAGE_MAX_SHELVES, STORAGE_PER_SHELF
 from streetmarket.models.topics import Topics
@@ -54,6 +57,9 @@ class TradingAgent(ABC):
         self._client = MarketBusClient(nats_url)
         self._state = AgentState(agent_id=self.AGENT_ID)
         self._running = False
+        self._join_pending = False
+        self._join_accepted = False
+        self._join_msg_id: str | None = None
 
     @property
     def state(self) -> AgentState:
@@ -95,6 +101,10 @@ class TradingAgent(ABC):
 
     async def _on_tick(self, envelope: Envelope) -> None:
         """Handle TICK and ENERGY_UPDATE messages."""
+        # Bankrupt agents do nothing — they're inactive
+        if self._state.is_bankrupt:
+            return
+
         if envelope.type == MessageType.ENERGY_UPDATE:
             energy_levels = envelope.payload.get("energy_levels", {})
             my_energy = energy_levels.get(self.AGENT_ID)
@@ -117,8 +127,8 @@ class TradingAgent(ABC):
 
         logger.debug("[tick %d] %s processing tick", tick, self.AGENT_ID)
 
-        # Auto-join on first tick
-        if not self._state.joined:
+        # Auto-join on first tick (or retry if previously rejected)
+        if not self._state.joined and not self._join_pending:
             await self._execute_action(
                 Action(
                     kind=ActionKind.JOIN,
@@ -129,7 +139,15 @@ class TradingAgent(ABC):
                 )
             )
             # Immediate heartbeat so viewers get wallet info right away
-            await self._execute_action(Action(kind=ActionKind.HEARTBEAT))
+            if self._join_accepted:
+                await self._execute_action(Action(kind=ActionKind.HEARTBEAT))
+
+        # If join is pending (waiting for admission), skip this tick
+        if self._join_pending and not self._join_accepted:
+            logger.debug(
+                "[tick %d] %s: waiting for join admission", tick, self.AGENT_ID
+            )
+            return
 
         # Auto-heartbeat
         elif self._state.needs_heartbeat(self.HEARTBEAT_INTERVAL):
@@ -150,15 +168,23 @@ class TradingAgent(ABC):
         # Run strategy (staggered to avoid LLM rate limits)
         if tick % self.DECIDE_INTERVAL == self.DECIDE_OFFSET:
             actions = await self.decide(self._state)
+            # Bankruptcy may have arrived during the LLM call — abort
+            if self._state.is_bankrupt:
+                return
             # Expire old offers (keep offers from the last 5 ticks for retries)
             self._state.expire_old_offers(max_age=5)
             for action in actions:
+                if self._state.is_bankrupt:
+                    break
                 if self._state.remaining_actions(self.MAX_ACTIONS_PER_TICK) <= 0:
                     logger.debug(
                         "[tick %d] %s: action limit reached", tick, self.AGENT_ID
                     )
                     break
                 await self._execute_action(action)
+            # Publish agent status (thoughts, speech, mood) if brain has it
+            if not self._state.is_bankrupt:
+                await self._publish_agent_status(tick, len(actions))
         else:
             logger.debug(
                 "[tick %d] %s: skipping LLM (stagger offset %d/%d)",
@@ -167,6 +193,9 @@ class TradingAgent(ABC):
 
     async def _on_nature(self, envelope: Envelope) -> None:
         """Handle SPAWN, GATHER_RESULT, and NATURE_EVENT messages."""
+        if self._state.is_bankrupt:
+            return
+
         if envelope.type == MessageType.NATURE_EVENT:
             logger.info(
                 "[tick %d] %s: nature event — %s",
@@ -190,18 +219,25 @@ class TradingAgent(ABC):
         elif envelope.type == MessageType.GATHER_RESULT:
             payload = GatherResult.model_validate(envelope.payload)
             if payload.agent_id == self.AGENT_ID and payload.success:
-                self._state.add_inventory(payload.item, payload.quantity)
+                # BF-2: Storage guard — don't add more than storage allows
+                space = self._state.storage_limit - self._state.total_inventory()
+                qty = min(payload.quantity, space)
+                if qty > 0:
+                    self._state.add_inventory(payload.item, qty)
                 self._update_storage_limit()
                 logger.info(
                     "[tick %d] %s: gathered %d %s",
                     self._state.current_tick,
                     self.AGENT_ID,
-                    payload.quantity,
+                    qty,
                     payload.item,
                 )
 
     async def _on_market(self, envelope: Envelope) -> None:
         """Handle market messages: observe offers/bids, process settlements."""
+        if self._state.is_bankrupt:
+            return
+
         # Skip own messages
         if envelope.from_agent == self.AGENT_ID:
             return
@@ -271,6 +307,37 @@ class TradingAgent(ABC):
 
     async def _on_inbox(self, envelope: Envelope) -> None:
         """Handle direct messages to this agent's inbox."""
+        # Handle JOIN admission result from Governor
+        if (
+            envelope.type == MessageType.VALIDATION_RESULT
+            and self._join_pending
+        ):
+            action = envelope.payload.get("action", "")
+            ref_id = envelope.payload.get("reference_msg_id", "")
+            if action == str(MessageType.JOIN) and ref_id == self._join_msg_id:
+                valid = envelope.payload.get("valid", False)
+                reason = envelope.payload.get("reason", "")
+                if valid:
+                    self._join_accepted = True
+                    self._join_pending = False
+                    self._state.joined = True
+                    self._state.wallet = 100.0
+                    logger.info(
+                        "[tick %d] %s: join accepted — %s",
+                        self._state.current_tick,
+                        self.AGENT_ID,
+                        reason,
+                    )
+                else:
+                    self._join_pending = False  # Allow retry on next tick
+                    logger.warning(
+                        "[tick %d] %s: join rejected — %s",
+                        self._state.current_tick,
+                        self.AGENT_ID,
+                        reason,
+                    )
+                return
+
         logger.debug(
             "[tick %d] %s: inbox message type=%s",
             self._state.current_tick,
@@ -279,7 +346,7 @@ class TradingAgent(ABC):
         )
 
     async def _on_bank(self, envelope: Envelope) -> None:
-        """Handle bank messages: RENT_DUE, BANKRUPTCY."""
+        """Handle bank messages: RENT_DUE, BANKRUPTCY, ITEM_SPOILED."""
         if envelope.type == MessageType.RENT_DUE:
             agent_id = envelope.payload.get("agent_id", "")
             if agent_id == self.AGENT_ID:
@@ -287,6 +354,21 @@ class TradingAgent(ABC):
                 wallet_after = envelope.payload.get("wallet_after", self._state.wallet)
                 self._state.rent_due_this_tick = amount
                 self._state.wallet = wallet_after
+                # Handle confiscation — update local inventory
+                confiscated = envelope.payload.get("confiscated_items")
+                if confiscated and isinstance(confiscated, dict):
+                    for item, qty in confiscated.items():
+                        self._state.remove_inventory(item, int(qty))
+                    self._state.confiscated_this_tick = {
+                        k: int(v) for k, v in confiscated.items()
+                    }
+                    self._update_storage_limit()
+                    logger.info(
+                        "[tick %d] %s: rent confiscated %s",
+                        self._state.current_tick,
+                        self.AGENT_ID,
+                        confiscated,
+                    )
                 logger.info(
                     "[tick %d] %s: rent due %.2f, wallet now %.2f",
                     self._state.current_tick,
@@ -299,11 +381,60 @@ class TradingAgent(ABC):
             if agent_id == self.AGENT_ID:
                 self._state.is_bankrupt = True
                 logger.warning(
-                    "[tick %d] %s: BANKRUPT — %s",
+                    "[tick %d] %s: BANKRUPT — %s. Going inactive.",
                     self._state.current_tick,
                     self.AGENT_ID,
                     envelope.payload.get("reason", ""),
                 )
+                # Stop listening and publishing — agent becomes inactive
+                # but the process stays alive (viewer still shows it)
+                await self.stop()
+        elif envelope.type == MessageType.ITEM_SPOILED:
+            agent_id = envelope.payload.get("agent_id", "")
+            if agent_id == self.AGENT_ID:
+                item = envelope.payload.get("item", "")
+                quantity = envelope.payload.get("quantity", 0)
+                if item and quantity > 0:
+                    self._state.remove_inventory(item, quantity)
+                    self._state.spoiled_this_tick.append(
+                        {"item": item, "quantity": quantity}
+                    )
+                    self._update_storage_limit()
+                    logger.info(
+                        "[tick %d] %s: %d %s spoiled!",
+                        self._state.current_tick,
+                        self.AGENT_ID,
+                        quantity,
+                        item,
+                    )
+
+    async def _publish_agent_status(self, tick: int, action_count: int) -> None:
+        """Publish AGENT_STATUS with thoughts, speech, and mood from the LLM brain."""
+        brain = getattr(self, "_brain", None)
+        if brain is None:
+            return
+        status = getattr(brain, "_last_status", None)
+        if status is None:
+            return
+        # Clear after publishing
+        brain._last_status = None
+        try:
+            msg = create_message(
+                from_agent=self.AGENT_ID,
+                topic=Topics.SQUARE,
+                msg_type=MessageType.AGENT_STATUS,
+                payload=AgentStatus(
+                    agent_id=self.AGENT_ID,
+                    thoughts=status.get("thoughts", ""),
+                    speech=status.get("speech", ""),
+                    mood=status.get("mood", "calm"),
+                    action_count=action_count,
+                ),
+                tick=tick,
+            )
+            await self._client.publish(Topics.SQUARE, msg)
+        except Exception as e:
+            logger.debug("Failed to publish agent status: %s", e)
 
     def _update_storage_limit(self) -> None:
         """Recalculate storage limit based on current shelf count."""
@@ -329,9 +460,20 @@ class TradingAgent(ABC):
                 tick=tick,
             )
             await self._client.publish(Topics.SQUARE, msg)
-            self._state.joined = True
-            self._state.wallet = 100.0  # Optimistic: Banker grants starting funds
-            logger.info("[tick %d] %s: joined the market", tick, self.AGENT_ID)
+            self._join_pending = True
+            self._join_msg_id = msg.id
+            logger.info("[tick %d] %s: join sent, awaiting admission", tick, self.AGENT_ID)
+            # Wait briefly for validation result (comes via inbox)
+            for _ in range(10):
+                await asyncio.sleep(0.1)
+                if self._join_accepted:
+                    break
+            if not self._join_accepted:
+                logger.warning(
+                    "[tick %d] %s: join admission timeout, will retry next tick",
+                    tick, self.AGENT_ID,
+                )
+                self._join_pending = False
 
         elif action.kind == ActionKind.HEARTBEAT:
             inventory_total = sum(self._state.inventory.values())
@@ -343,6 +485,7 @@ class TradingAgent(ABC):
                     agent_id=self.AGENT_ID,
                     wallet=self._state.wallet,
                     inventory_count=inventory_total,
+                    inventory={k: v for k, v in self._state.inventory.items() if v > 0},
                 ),
                 tick=tick,
             )

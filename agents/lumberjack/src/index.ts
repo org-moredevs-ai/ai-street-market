@@ -84,10 +84,15 @@ async function executeAction(action: Action): Promise<void> {
 
     case "heartbeat": {
       const total = Object.values(state.inventory).reduce((s, v) => s + v, 0);
+      const inv: Record<string, number> = {};
+      for (const [k, v] of Object.entries(state.inventory)) {
+        if (v > 0) inv[k] = v;
+      }
       await publishMessage(Topics.SQUARE, MessageType.HEARTBEAT, {
         agent_id: AGENT_ID,
         wallet: state.wallet,
         inventory_count: total,
+        inventory: inv,
       });
       state.lastHeartbeatTick = tick;
       state.actionsThisTick++;
@@ -204,6 +209,7 @@ function handleGatherResult(payload: Record<string, unknown>): void {
 }
 
 function handleMarketMessage(envelope: Envelope): void {
+  if (state.isBankrupt) return;
   if (envelope.from === AGENT_ID) return;
 
   if (envelope.type === MessageType.OFFER) {
@@ -239,6 +245,9 @@ function handleMarketMessage(envelope: Envelope): void {
 }
 
 async function onTick(tickNumber: number): Promise<void> {
+  // Bankrupt agents do nothing — they're inactive
+  if (state.isBankrupt) return;
+
   advanceTick(state, tickNumber);
 
   // Auto-join
@@ -313,6 +322,7 @@ async function main(): Promise<void> {
 
   // Subscribe to tick + energy updates
   await subscribe(Topics.TICK, async (env) => {
+    if (state.isBankrupt) return;
     if (env.type === MessageType.TICK) {
       await onTick(env.payload.tick_number as number);
     } else if (env.type === MessageType.ENERGY_UPDATE) {
@@ -325,10 +335,46 @@ async function main(): Promise<void> {
 
   // Subscribe to nature (spawn + gather results)
   await subscribe(Topics.NATURE, (env) => {
+    if (state.isBankrupt) return;
     if (env.type === MessageType.SPAWN) {
       handleSpawn(env.payload);
     } else if (env.type === MessageType.GATHER_RESULT) {
       handleGatherResult(env.payload);
+    }
+  });
+
+  // Subscribe to bank (rent, bankruptcy, spoilage)
+  await subscribe(Topics.BANK, async (env) => {
+    if (env.type === MessageType.BANKRUPTCY) {
+      const agentId = env.payload.agent_id as string;
+      if (agentId === AGENT_ID) {
+        state.isBankrupt = true;
+        console.log(
+          `[tick ${state.currentTick}] ${AGENT_ID}: BANKRUPT — ${env.payload.reason ?? ""}. Going inactive.`
+        );
+        // Stop listening and publishing — agent becomes inactive
+        await nc.drain();
+      }
+    } else if (env.type === "rent_due") {
+      const agentId = env.payload.agent_id as string;
+      if (agentId === AGENT_ID) {
+        state.wallet = (env.payload.wallet_after as number) ?? state.wallet;
+        const confiscated = env.payload.confiscated_items as Record<string, number> | undefined;
+        if (confiscated) {
+          for (const [item, qty] of Object.entries(confiscated)) {
+            removeInventory(state, item, qty);
+          }
+        }
+      }
+    } else if (env.type === "item_spoiled") {
+      const agentId = env.payload.agent_id as string;
+      if (agentId === AGENT_ID) {
+        const item = env.payload.item as string;
+        const quantity = env.payload.quantity as number;
+        if (item && quantity > 0) {
+          removeInventory(state, item, quantity);
+        }
+      }
     }
   });
 

@@ -30,8 +30,14 @@ _CLASSIFICATION: dict[str, str] = {
     MessageType.SPAWN: "forward_medium",
     MessageType.GATHER_RESULT: "forward_medium",
     MessageType.CONSUME_RESULT: "forward_medium",
+    # Agent personality — forward for viewer entertainment
+    MessageType.AGENT_STATUS: "forward_high",
+    # Spoilage — important economy event
+    MessageType.ITEM_SPOILED: "forward_high",
+    # Economy halt — all agents bankrupt
+    MessageType.ECONOMY_HALT: "forward_high",
     # State only — too noisy to forward
-    MessageType.HEARTBEAT: "state_only",
+    MessageType.HEARTBEAT: "forward_medium",
     MessageType.VALIDATION_RESULT: "state_only",
     # Ignored — duplicated by result messages
     MessageType.GATHER: "ignored",

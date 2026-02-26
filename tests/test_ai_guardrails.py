@@ -133,14 +133,91 @@ class TestNoAgentWithoutLLM:
 
 
 class TestEconomyRunnerChecksAPIKey:
-    """The economy runner must refuse to start without OPENROUTER_API_KEY."""
+    """The economy runner must refuse to start without API keys."""
 
-    def test_run_economy_checks_api_key(self):
+    def test_run_economy_checks_service_key(self):
         runner_file = PROJECT_ROOT / "scripts" / "run_economy.py"
         source = runner_file.read_text()
         assert "OPENROUTER_API_KEY" in source, (
             "run_economy.py does not check for OPENROUTER_API_KEY"
         )
+
+    def test_run_economy_validates_agent_keys(self):
+        """Economy runner must validate that each agent has its own key."""
+        runner_file = PROJECT_ROOT / "scripts" / "run_economy.py"
+        source = runner_file.read_text()
+        assert "_validate_agent_env" in source, (
+            "run_economy.py does not call _validate_agent_env()"
+        )
+        assert "AGENT_PREFIXES" in source, (
+            "run_economy.py does not check all agent prefixes"
+        )
+
+
+class TestStrictAgentIsolation:
+    """Agent LLM config must enforce strict per-agent isolation."""
+
+    def test_for_agent_requires_own_key(self):
+        """LLMConfig.for_agent() must not fall back to OPENROUTER_API_KEY."""
+        config_file = (
+            PROJECT_ROOT / "libs" / "streetmarket" / "agent" / "llm_config.py"
+        )
+        source = config_file.read_text()
+        # for_agent must NOT contain a fallback to OPENROUTER_API_KEY
+        # Find the for_agent method body
+        start = source.index("def for_agent(")
+        end = source.index("def for_service(")
+        for_agent_body = source[start:end]
+        assert "OPENROUTER_API_KEY" not in for_agent_body, (
+            "LLMConfig.for_agent() still falls back to shared OPENROUTER_API_KEY"
+        )
+        assert "DEFAULT_MODEL" not in for_agent_body, (
+            "LLMConfig.for_agent() still falls back to DEFAULT_MODEL"
+        )
+
+    def test_for_agent_raises_on_missing_key(self):
+        """LLMConfig.for_agent() must raise without per-agent key."""
+        config_file = (
+            PROJECT_ROOT / "libs" / "streetmarket" / "agent" / "llm_config.py"
+        )
+        source = config_file.read_text()
+        assert "raise KeyError" in source or "raise ValueError" in source, (
+            "LLMConfig.for_agent() does not raise on missing config"
+        )
+
+    def test_lumberjack_ts_requires_own_key(self):
+        """Lumberjack TypeScript config must not fall back to shared key."""
+        config_file = (
+            PROJECT_ROOT / "agents" / "lumberjack" / "src" / "llm_brain.ts"
+        )
+        source = config_file.read_text()
+        # Uses template literal: ${prefix}_API_KEY where prefix = "LUMBERJACK"
+        assert "prefix" in source and "_API_KEY" in source, (
+            "Lumberjack loadConfig() does not check per-agent API key"
+        )
+        assert "throw new Error" in source, (
+            "Lumberjack loadConfig() does not throw on missing config"
+        )
+        # Must NOT fall back to shared OPENROUTER_API_KEY for the agent key
+        # (API base fallback is fine — it's just infrastructure URL)
+        assert 'OPENROUTER_API_KEY' not in source, (
+            "Lumberjack loadConfig() still falls back to shared OPENROUTER_API_KEY"
+        )
+
+    def test_agent_prefixes_constant_exists(self):
+        """AGENT_PREFIXES must enumerate all agents for validation."""
+        config_file = (
+            PROJECT_ROOT / "libs" / "streetmarket" / "agent" / "llm_config.py"
+        )
+        source = config_file.read_text()
+        assert "AGENT_PREFIXES" in source, (
+            "llm_config.py missing AGENT_PREFIXES constant"
+        )
+        # Every known agent must be listed
+        for agent in ("FARMER", "CHEF", "BAKER", "MASON", "BUILDER", "LUMBERJACK"):
+            assert f'"{agent}"' in source, (
+                f"AGENT_PREFIXES missing {agent}"
+            )
 
 
 class TestOpenRouterIsGateway:

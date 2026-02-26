@@ -113,7 +113,7 @@ class TestFallbackNarration:
         narrator = Narrator()
         result = narrator._fallback_narration(_empty_summary(), MarketWeather.STABLE)
         assert isinstance(result, NarrationResult)
-        assert result.headline == "Market report"
+        assert "quiet day" in result.headline.lower()
         assert result.drama_level == 1
         assert result.predictions is None
 
@@ -155,7 +155,8 @@ class TestFallbackNarration:
             {"agent_id": "chef", "recipe": "soup", "output": "soup", "quantity": 1},
         ]
         result = narrator._fallback_narration(summary, MarketWeather.STABLE)
-        assert "2x soup" in result.body
+        assert "crafted" in result.body.lower()
+        assert "soup" in result.body.lower()
 
     def test_fallback_drama_map(self) -> None:
         narrator = Narrator()
@@ -170,12 +171,14 @@ class TestFallbackNarration:
             result = narrator._fallback_narration(summary, weather)
             assert result.drama_level == expected_drama, f"Failed for {weather}"
 
-    def test_fallback_body_includes_weather(self) -> None:
+    def test_fallback_body_no_techy_jargon(self) -> None:
+        """Fallback body should NOT contain raw weather/tick labels."""
         narrator = Narrator()
         result = narrator._fallback_narration(
             _empty_summary(), MarketWeather.BOOMING
         )
-        assert "booming" in result.body
+        assert "Weather:" not in result.body
+        assert "Ticks " not in result.body
 
 
 # ── Build prompt ─────────────────────────────────────────────────────────────
@@ -274,7 +277,7 @@ class TestGenerateNarration:
                 )
 
         assert isinstance(result, NarrationResult)
-        assert result.headline == "Market report"
+        assert "quiet day" in result.headline.lower()
 
     async def test_generate_no_api_key_falls_back(self) -> None:
         narrator = Narrator()
@@ -285,4 +288,4 @@ class TestGenerateNarration:
             )
 
         assert isinstance(result, NarrationResult)
-        assert result.headline == "Market report"
+        assert "quiet day" in result.headline.lower()

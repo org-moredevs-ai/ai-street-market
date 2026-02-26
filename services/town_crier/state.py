@@ -64,6 +64,7 @@ class TownCrierState:
     rent_payments: list[RentRecord] = field(default_factory=list)
     crafts: list[CraftRecord] = field(default_factory=list)
     joins: list[str] = field(default_factory=list)
+    spoilage_events: list[dict] = field(default_factory=list)
     activity_counts: dict[str, int] = field(default_factory=dict)
 
     # Snapshot (overwritten each update)
@@ -75,9 +76,12 @@ class TownCrierState:
     total_coins_traded: float = 0.0
     all_time_crafts: dict[str, int] = field(default_factory=dict)
 
-    def advance_tick(self, tick: int) -> None:
-        """Update the current tick."""
+    def advance_tick(self, tick: int) -> bool:
+        """Update the current tick. Returns False if stale."""
+        if tick <= self.current_tick:
+            return False
         self.current_tick = tick
+        return True
 
     def record_settlement(
         self,
@@ -126,6 +130,12 @@ class TownCrierState:
         """Track a new agent joining."""
         self.joins.append(agent_id)
 
+    def record_spoilage(self, agent_id: str, item: str, quantity: int) -> None:
+        """Track an item spoilage event."""
+        self.spoilage_events.append(
+            {"agent_id": agent_id, "item": item, "quantity": quantity}
+        )
+
     def record_craft(self, agent_id: str, recipe: str, output: str, quantity: int = 1) -> None:
         """Track a crafting completion."""
         self.crafts.append(
@@ -150,8 +160,11 @@ class TownCrierState:
         """
         bankrupt_count = len(self.bankruptcies)
 
-        # Energy analysis
-        energy_values = list(self.energy_levels.values())
+        # Energy analysis — exclude bankrupt agents (they'd drag avg to 0)
+        all_bankrupt = set(self.bankruptcies)
+        energy_values = [
+            v for k, v in self.energy_levels.items() if k not in all_bankrupt
+        ]
         avg_energy = (
             sum(energy_values) / len(energy_values) if energy_values else 50.0
         )
@@ -231,6 +244,7 @@ class TownCrierState:
                 for c in self.crafts
             ],
             "joins": list(self.joins),
+            "spoilage_events": list(self.spoilage_events),
             "activity_counts": dict(self.activity_counts),
             "weather": self.compute_market_weather(),
             "total_settlements": self.total_settlements,
@@ -248,4 +262,5 @@ class TownCrierState:
         self.rent_payments.clear()
         self.crafts.clear()
         self.joins.clear()
+        self.spoilage_events.clear()
         self.activity_counts.clear()

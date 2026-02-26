@@ -1,0 +1,5 @@
+# Install the streetmarket SDK from the project root:
+#   pip install -e ../../libs/
+# Or if published to PyPI:
+#   streetmarket
+nats-py>=2.7.0
