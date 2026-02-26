@@ -1,4 +1,4 @@
-.PHONY: setup infra-up infra-down test lint
+.PHONY: setup infra-up infra-down test lint run-season run-season-fast
 
 setup:
 	python3 -m venv .venv
@@ -17,3 +17,9 @@ test:
 lint:
 	.venv/bin/ruff check .
 	.venv/bin/mypy libs/streetmarket
+
+run-season:
+	.venv/bin/python scripts/run_season.py
+
+run-season-fast:
+	.venv/bin/python scripts/run_season.py --tick-override 2
