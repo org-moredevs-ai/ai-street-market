@@ -71,9 +71,7 @@ class MyAgent(TradingAgent):
         else:
             logger.debug("Resting at tick %d", tick)
 
-    async def on_market_message(
-        self, topic: str, message: str, from_agent: str
-    ) -> None:
+    async def on_market_message(self, topic: str, message: str, from_agent: str) -> None:
         """React to market messages."""
         # Example: log interesting messages
         if topic == Topics.BANK:
@@ -88,8 +86,7 @@ async def main() -> None:
 
     await agent.connect(nats_url)
     await agent.join(
-        "Hello! I am a new trader here. "
-        "I'm eager to learn the market and start trading!"
+        "Hello! I am a new trader here. I'm eager to learn the market and start trading!"
     )
     await agent.run()
 

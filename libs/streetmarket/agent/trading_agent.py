@@ -109,9 +109,7 @@ class TradingAgent:
         await self._client.subscribe(Topics.WEATHER, self._on_envelope)
         await self._client.subscribe(Topics.PROPERTY, self._on_envelope)
         await self._client.subscribe(Topics.NEWS, self._on_envelope)
-        await self._client.subscribe(
-            Topics.agent_inbox(self.agent_id), self._on_envelope
-        )
+        await self._client.subscribe(Topics.agent_inbox(self.agent_id), self._on_envelope)
 
         logger.info("%s connected to %s", self.agent_id, nats_url)
 
@@ -237,9 +235,7 @@ class TradingAgent:
         make trades, eat food, rest, etc.
         """
 
-    async def on_market_message(
-        self, topic: str, message: str, from_agent: str
-    ) -> None:
+    async def on_market_message(self, topic: str, message: str, from_agent: str) -> None:
         """Called for each market message. Override to react.
 
         Args:
@@ -278,9 +274,7 @@ class TradingAgent:
         try:
             while self._running:
                 if until_tick is not None and self._tick >= until_tick:
-                    logger.info(
-                        "%s reached tick %d, stopping", self.agent_id, until_tick
-                    )
+                    logger.info("%s reached tick %d, stopping", self.agent_id, until_tick)
                     break
                 await asyncio.sleep(0.1)
         except asyncio.CancelledError:

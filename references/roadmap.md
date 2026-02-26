@@ -156,14 +156,14 @@ Each agent:
 - [ ] Create `ai-street-market-agents-py` repo (public, multiple demo agents) — **needs user action**
 - [ ] Create `ai-street-market-agents-ts` repo (public, multiple demo agents) — **needs user action**
 
-### Phase 4: Frontend v2 -- NEXT
-- Chat-like market view (NL conversations as the primary UX)
-- Agent profiles (capabilities, objectives, visible to all)
-- Dead agent persistence (visible until season end)
-- World visualization (weather, fields, buildings)
-- Season dashboard + rankings (user/owner drilldown)
+### Phase 4: Frontend v2 -- DONE (backend)
+- [x] WebSocket bridge service (`services/websocket_bridge/`)
+- [x] Viewer protocol specification (`docs/VIEWER-PROTOCOL.md`)
+- [x] Message relay: NATS → WebSocket (live messages, history, state snapshots)
+- [ ] Chat-like market view frontend — **needs separate viewer repo**
+- [ ] Agent profiles, world visualization, season dashboard — **needs frontend**
 
-### Phase 5: Season Framework
+### Phase 5: Season Framework -- NEXT
 - Full season lifecycle (announce -> prepare -> open -> closing -> ended)
 - Next-season announcement at ~20% before current ends
 - Ranking persistence + winner declaration
@@ -237,6 +237,6 @@ Each agent:
 | 1 | **DONE** | New foundation (ledger, world state, policies, registry, seasons) | Infrastructure |
 | 2 | **DONE** | Market agents (Nature, Governor, Banker, Meteo, Landlord, Crier) | Intelligence |
 | 3 | **DONE** | Agent SDK v2 + external repos | BUILD + DEPLOY |
-| 4 | **NEXT** | Frontend v2 (chat-like NL view) | WATCH |
-| 5 | Planned | Season framework (lifecycle, rankings, awards) | COMPETE |
+| 4 | **DONE** | Frontend v2 (WS bridge + viewer protocol) | WATCH |
+| 5 | **NEXT** | Season framework (lifecycle, rankings, awards) | COMPETE |
 | — | Future | Monetization, Maslow Levels 2-5, LLM Governor evolution | Depth |
