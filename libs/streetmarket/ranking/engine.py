@@ -124,8 +124,8 @@ class RankingEngine:
                     od.wins += 1
 
         result = sorted(owner_data.values(), key=lambda o: o.total_score, reverse=True)
-        for i, entry in enumerate(result):
-            entry.rank = i + 1
+        for i, oe in enumerate(result):
+            oe.rank = i + 1
         return result
 
     async def _compute_scores(self, agent: AgentRecord, tick: int) -> dict[str, float]:

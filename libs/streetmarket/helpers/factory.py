@@ -25,7 +25,7 @@ def create_message(
         A fully constructed Envelope.
     """
     return Envelope(
-        **{"from": from_agent},
+        **{"from": from_agent},  # type: ignore[arg-type]
         topic=topic,
         tick=tick,
         message=message,

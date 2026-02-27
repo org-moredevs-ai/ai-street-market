@@ -121,7 +121,7 @@ class StateSnapshot:
     def restore(path: str | Path) -> dict[str, Any]:
         """Load a snapshot file and return the raw state dict."""
         filepath = Path(path)
-        data = json.loads(filepath.read_text(encoding="utf-8"))
+        data: dict[str, Any] = json.loads(filepath.read_text(encoding="utf-8"))
         logger.info("Snapshot loaded: %s (tick %d)", filepath, data.get("tick", -1))
         return data
 
@@ -145,7 +145,7 @@ class StateSnapshot:
         _apply_season(state.get("season", {}), season_manager)
         _apply_ranking(state.get("ranking", {}), ranking_engine)
 
-        tick = state.get("tick", 0)
+        tick: int = state.get("tick", 0)
         logger.info("Snapshot applied — restored to tick %d", tick)
         return tick
 

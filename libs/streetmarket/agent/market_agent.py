@@ -44,9 +44,9 @@ def create_llm_fn(config: LLMConfig) -> LLMFunction:
 
     llm = ChatOpenAI(
         model=config.model,
-        api_key=config.api_key,
+        api_key=config.api_key,  # type: ignore[arg-type]
         base_url=config.api_base,
-        max_tokens=config.max_tokens,
+        max_tokens=config.max_tokens,  # type: ignore[call-arg]
         temperature=config.temperature,
     )
 

@@ -80,7 +80,7 @@ class TradingAgent:
 
             self._llm = create_llm_fn(llm_config)
         else:
-            self._llm = None
+            self._llm = None  # type: ignore[assignment]
 
     @property
     def current_tick(self) -> int:

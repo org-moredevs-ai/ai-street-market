@@ -133,7 +133,7 @@ class SeasonManager:
         delta = (dt - self._state.config.starts_at).total_seconds()
         return max(0, int(delta / self._state.config.tick_interval_seconds))
 
-    def snapshot(self) -> dict:
+    def snapshot(self) -> dict[str, object]:
         """Return a snapshot of the current season state."""
         return {
             "name": self._state.config.name,

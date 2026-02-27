@@ -128,7 +128,7 @@ class MarketBusClient:
         # Fallback to core NATS
         if self._nc is None:
             raise RuntimeError("Not connected. Call connect() first.")
-        sub = await self._nc.subscribe(subject, cb=_msg_handler)
+        sub = await self._nc.subscribe(subject, cb=_msg_handler)  # type: ignore[assignment]
         self._subscriptions.append(sub)
         logger.info("Core NATS subscribed to %s", subject)
 

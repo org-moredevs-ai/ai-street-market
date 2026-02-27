@@ -191,7 +191,7 @@ class InMemoryLedger:
         counterparty: str = "",
         item: str = "",
         quantity: int = 0,
-        details: dict | None = None,
+        details: dict[str, str] | None = None,
     ) -> None:
         txn = Transaction(
             id=str(uuid.uuid4()),
