@@ -1,0 +1,6 @@
+# AI Street Market — NATS server with production configuration
+FROM nats:2.10-alpine
+
+COPY nats/nats-server.prod.conf /etc/nats/nats-server.conf
+
+CMD ["-c", "/etc/nats/nats-server.conf"]

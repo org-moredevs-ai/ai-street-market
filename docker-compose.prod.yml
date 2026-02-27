@@ -1,0 +1,84 @@
+# AI Street Market — Production-like Docker Compose
+# Run locally to test the containerized deployment.
+#
+# Usage:
+#   OPENROUTER_API_KEY=sk-or-xxx DEFAULT_MODEL=google/gemma-3-12b-it:free \
+#     docker compose -f docker-compose.prod.yml up
+#
+# Required env vars: OPENROUTER_API_KEY, DEFAULT_MODEL
+
+services:
+  # -- NATS message bus with JetStream persistence --
+  nats:
+    build:
+      context: infrastructure/
+      dockerfile: Dockerfile.nats
+    container_name: streetmarket-nats
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - nats-data:/data/jetstream
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # -- Market service (season runner + all 6 market agents) --
+  market:
+    build:
+      context: .
+      target: market
+    container_name: streetmarket-market
+    depends_on:
+      nats:
+        condition: service_healthy
+    environment:
+      - NATS_URL=nats://nats:4222
+      - SEASON_FILE=${SEASON_FILE:-season-1.yaml}
+      - TICK_OVERRIDE=${TICK_OVERRIDE:-}
+      - SNAPSHOT_DIR=/data/snapshots
+      - SNAPSHOT_INTERVAL=${SNAPSHOT_INTERVAL:-50}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_API_BASE=${OPENROUTER_API_BASE:-https://openrouter.ai/api/v1}
+      - DEFAULT_MODEL=${DEFAULT_MODEL}
+      - DEFAULT_MAX_TOKENS=${DEFAULT_MAX_TOKENS:-400}
+      - DEFAULT_TEMPERATURE=${DEFAULT_TEMPERATURE:-0.7}
+    volumes:
+      - market-data:/data/snapshots
+    restart: unless-stopped
+
+  # -- WebSocket bridge (NATS → browser relay) --
+  ws-bridge:
+    build:
+      context: .
+      target: ws-bridge
+    container_name: streetmarket-ws-bridge
+    depends_on:
+      nats:
+        condition: service_healthy
+    ports:
+      - "9090:9090"
+    environment:
+      - NATS_URL=nats://nats:4222
+      - WS_HOST=0.0.0.0
+      - WS_PORT=9090
+    restart: unless-stopped
+
+  # -- Viewer (placeholder — separate repo) --
+  # viewer:
+  #   image: hugocasqueiromoredevsai/streetmarket-viewer:latest
+  #   container_name: streetmarket-viewer
+  #   depends_on:
+  #     - ws-bridge
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - WS_BRIDGE_URL=ws://ws-bridge:9090
+  #   restart: unless-stopped
+
+volumes:
+  nats-data:
+  market-data:

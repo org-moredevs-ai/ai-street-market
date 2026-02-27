@@ -38,6 +38,7 @@ from streetmarket.agent.market_agent import MarketAgent  # noqa: E402
 from streetmarket.client.nats_client import STREAM_NAME, MarketBusClient  # noqa: E402
 from streetmarket.ledger.memory import InMemoryLedger  # noqa: E402
 from streetmarket.models.envelope import Envelope  # noqa: E402
+from streetmarket.persistence.snapshots import StateSnapshot  # noqa: E402
 from streetmarket.policy.engine import PolicyEngine, SeasonConfig, WorldPolicy  # noqa: E402
 from streetmarket.ranking.engine import RankingEngine, RankingEntry  # noqa: E402
 from streetmarket.registry.registry import AgentRegistry  # noqa: E402
@@ -101,6 +102,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         default=None,
         help="Override tick interval in seconds (for faster testing)",
+    )
+    parser.add_argument(
+        "--snapshot-dir",
+        default="/data/snapshots",
+        help="Directory for state snapshots (crash recovery)",
+    )
+    parser.add_argument(
+        "--snapshot-interval",
+        type=int,
+        default=50,
+        help="Save state snapshot every N ticks (0 to disable)",
     )
     return parser.parse_args(argv)
 
@@ -358,9 +370,30 @@ async def main(argv: list[str] | None = None) -> None:
     season_manager = SeasonManager(season_config)
     ranking_engine = RankingEngine(season_config, ledger, registry)
 
+    # 3b. Restore from snapshot if available
+    restored_tick = 0
+    snapshot_file = StateSnapshot.find_latest(args.snapshot_dir)
+    if snapshot_file:
+        logger.info("Found snapshot: %s — restoring state...", snapshot_file)
+        state_data = StateSnapshot.restore(snapshot_file)
+        restored_tick = StateSnapshot.apply(
+            state_data,
+            ledger=ledger,
+            registry=registry,
+            world_state=world_state,
+            season_manager=season_manager,
+            ranking_engine=ranking_engine,
+        )
+        print(f"  {_GREEN}Restored from snapshot at tick {restored_tick}{_RESET}\n")
+    else:
+        logger.info("No snapshot found in %s — starting fresh", args.snapshot_dir)
+
     # 4. Purge stale NATS messages and connect
     logger.info("Connecting to NATS at %s...", args.nats_url)
-    await purge_nats_stream(args.nats_url)
+    if not restored_tick:
+        await purge_nats_stream(args.nats_url)
+    else:
+        logger.info("Skipping NATS purge (restoring from snapshot)")
 
     nats_client = MarketBusClient(args.nats_url)
     await nats_client.connect()
@@ -417,13 +450,18 @@ async def main(argv: list[str] | None = None) -> None:
             logger.info("WebSocket bridge skipped (--no-bridge)")
 
         # 7. Run season lifecycle
-        # Phase: ANNOUNCED → PREPARATION
-        season_manager.advance_to(SeasonPhase.PREPARATION)
-        logger.info("Phase: PREPARATION")
-
-        # Phase: PREPARATION → OPEN
-        season_manager.advance_to(SeasonPhase.OPEN)
-        logger.info("Phase: OPEN — trading begins!")
+        if not restored_tick:
+            # Fresh start: advance through phases
+            season_manager.advance_to(SeasonPhase.PREPARATION)
+            logger.info("Phase: PREPARATION")
+            season_manager.advance_to(SeasonPhase.OPEN)
+            logger.info("Phase: OPEN — trading begins!")
+        else:
+            logger.info(
+                "Resuming from tick %d — phase: %s",
+                restored_tick,
+                season_manager.phase.value.upper(),
+            )
 
         # Create and start tick clock
         async def publish_fn(topic: str, envelope: Envelope) -> None:
@@ -431,11 +469,12 @@ async def main(argv: list[str] | None = None) -> None:
 
         clock = TickClock(season_manager, publish_fn)
 
-        # Run clock with periodic progress logging
+        # Run clock with periodic progress logging + snapshots
         last_log_tick = 0
+        last_snapshot_tick = restored_tick
 
         async def _monitor_progress() -> None:
-            nonlocal last_log_tick
+            nonlocal last_log_tick, last_snapshot_tick
             while not shutdown_event.is_set() and season_manager.is_running:
                 await asyncio.sleep(5)
                 current = season_manager.current_tick
@@ -450,6 +489,25 @@ async def main(argv: list[str] | None = None) -> None:
                         progress,
                         phase,
                     )
+
+                # Periodic snapshot saving
+                if (
+                    args.snapshot_interval > 0
+                    and current - last_snapshot_tick >= args.snapshot_interval
+                ):
+                    try:
+                        StateSnapshot.save(
+                            args.snapshot_dir,
+                            tick=current,
+                            ledger=ledger,
+                            registry=registry,
+                            world_state=world_state,
+                            season_manager=season_manager,
+                            ranking_engine=ranking_engine,
+                        )
+                        last_snapshot_tick = current
+                    except Exception:
+                        logger.exception("Failed to save snapshot at tick %d", current)
 
         monitor_task = asyncio.create_task(_monitor_progress())
 
@@ -492,7 +550,23 @@ async def main(argv: list[str] | None = None) -> None:
         )
 
     finally:
-        # 9. Graceful cleanup
+        # 9. Save final snapshot before shutdown
+        if args.snapshot_interval > 0:
+            try:
+                StateSnapshot.save(
+                    args.snapshot_dir,
+                    tick=season_manager.current_tick,
+                    ledger=ledger,
+                    registry=registry,
+                    world_state=world_state,
+                    season_manager=season_manager,
+                    ranking_engine=ranking_engine,
+                )
+                logger.info("Final snapshot saved at tick %d", season_manager.current_tick)
+            except Exception:
+                logger.exception("Failed to save final snapshot")
+
+        # 10. Graceful cleanup
         logger.info("Shutting down...")
 
         if clock and clock.is_running:
