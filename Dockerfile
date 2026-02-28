@@ -1,10 +1,9 @@
-# AI Street Market — Multi-stage Dockerfile
-# Targets: market (season runner), ws-bridge (WebSocket relay)
+# AI Street Market — Dockerfile
+# Single image — SERVICE_ROLE env var selects market or ws-bridge at runtime.
+# Railway doesn't support --target, and startCommand doesn't inherit Docker PATH,
+# so we use a unified entrypoint that routes based on SERVICE_ROLE.
 
-# ============================================================
-# Base stage — shared Python environment
-# ============================================================
-FROM python:3.12-slim AS base
+FROM python:3.12-slim
 
 WORKDIR /app
 
@@ -25,26 +24,17 @@ COPY scripts/ scripts/
 COPY policies/ policies/
 
 # Ensure scripts are executable
-RUN chmod +x scripts/entrypoint-market.sh scripts/entrypoint-bridge.sh
+RUN chmod +x scripts/entrypoint.sh scripts/entrypoint-market.sh scripts/entrypoint-bridge.sh
 
 ENV PYTHONPATH=/app \
     PYTHONUNBUFFERED=1
 
-# ============================================================
-# Market service — season runner + all market agents
-# ============================================================
-FROM base AS market
-
 # Snapshot directory (Railway volume mounted at /data/snapshots)
 RUN mkdir -p /data/snapshots
 
-ENTRYPOINT ["scripts/entrypoint-market.sh"]
-
-# ============================================================
-# WebSocket bridge — NATS to WebSocket relay
-# ============================================================
-FROM base AS ws-bridge
-
 EXPOSE 9090
 
-ENTRYPOINT ["scripts/entrypoint-bridge.sh"]
+# SERVICE_ROLE defaults to "market"; set to "ws-bridge" for the bridge service
+ENV SERVICE_ROLE=market
+
+ENTRYPOINT ["scripts/entrypoint.sh"]

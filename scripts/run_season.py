@@ -386,7 +386,20 @@ async def main(argv: list[str] | None = None) -> None:
             season_manager=season_manager,
             ranking_engine=ranking_engine,
         )
-        print(f"  {_GREEN}Restored from snapshot at tick {restored_tick}{_RESET}\n")
+        # If the restored snapshot is from an ENDED season, discard it and start fresh
+        if season_manager.phase == SeasonPhase.ENDED:
+            logger.info(
+                "Snapshot is from ended season (tick %d) — starting fresh",
+                restored_tick,
+            )
+            restored_tick = 0
+            ledger = InMemoryLedger()
+            registry = AgentRegistry()
+            world_state = WorldStateStore()
+            season_manager = SeasonManager(season_config)
+            ranking_engine = RankingEngine(season_config, ledger, registry)
+        else:
+            print(f"  {_GREEN}Restored from snapshot at tick {restored_tick}{_RESET}\n")
     else:
         logger.info("No snapshot found in %s — starting fresh", args.snapshot_dir)
 
