@@ -35,8 +35,8 @@ ENV PYTHONPATH=/app \
 # ============================================================
 FROM base AS market
 
-# Persistent volume for state snapshots
-VOLUME /data/snapshots
+# Snapshot directory (Railway volume mounted at /data/snapshots)
+RUN mkdir -p /data/snapshots
 
 ENTRYPOINT ["scripts/entrypoint-market.sh"]
 
