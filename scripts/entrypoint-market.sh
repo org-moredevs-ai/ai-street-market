@@ -14,7 +14,6 @@ ARGS="${ARGS} --nats-url ${NATS_URL:-nats://localhost:4222}"
 ARGS="${ARGS} --season ${SEASON_FILE:-season-1.yaml}"
 ARGS="${ARGS} --snapshot-dir ${SNAPSHOT_DIR:-/data/snapshots}"
 ARGS="${ARGS} --snapshot-interval ${SNAPSHOT_INTERVAL:-50}"
-ARGS="${ARGS} --no-bridge"
 
 if [ -n "${TICK_OVERRIDE:-}" ]; then
     ARGS="${ARGS} --tick-override ${TICK_OVERRIDE}"

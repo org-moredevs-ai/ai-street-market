@@ -42,3 +42,6 @@ jetstream/
 
 # Node.js
 node_modules/
+
+# Playwright MCP
+.playwright-mcp/
