@@ -57,8 +57,8 @@ class TestLoadSeasonConfig:
         assert season.name == "Harvest Festival"
         assert season.number == 1
         assert season.tick_interval_seconds == 10
-        assert season.starts_at == datetime(2026, 3, 15, 10, 0, 0, tzinfo=timezone.utc)
-        assert season.ends_at == datetime(2026, 3, 22, 10, 0, 0, tzinfo=timezone.utc)
+        assert season.starts_at == datetime(2026, 2, 28, 21, 0, 0, tzinfo=timezone.utc)
+        assert season.ends_at == datetime(2026, 3, 7, 21, 0, 0, tzinfo=timezone.utc)
         assert season.world_policy_file == "earth-medieval-temperate.yaml"
         has_desc = (
             "Harvest Festival" in season.description or "first season" in season.description.lower()
