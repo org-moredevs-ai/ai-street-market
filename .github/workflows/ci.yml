@@ -155,26 +155,17 @@ jobs:
     needs: [build]
     if: github.event_name == 'push'
     environment: staging
+    container: ghcr.io/railwayapp/cli:latest
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli
+      - name: Deploy market service
+        run: railway up --service market --environment staging --ci
 
-      - name: Deploy to Railway (staging)
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          echo "Deploying to Railway staging environment..."
-          echo "Market image: ${{ env.IMAGE_PREFIX }}-market:sha-${GITHUB_SHA::7}"
-          echo "WS-Bridge image: ${{ env.IMAGE_PREFIX }}-ws-bridge:sha-${GITHUB_SHA::7}"
-          echo "NATS image: ${{ env.IMAGE_PREFIX }}-nats:sha-${GITHUB_SHA::7}"
-          echo ""
-          echo "Railway deployment commands would go here."
-          echo "Configure via Railway dashboard or CLI once project is set up."
-          # railway up --service market --image $IMAGE_PREFIX-market:sha-${GITHUB_SHA::7}
-          # railway up --service ws-bridge --image $IMAGE_PREFIX-ws-bridge:sha-${GITHUB_SHA::7}
-          # railway up --service nats --image $IMAGE_PREFIX-nats:sha-${GITHUB_SHA::7}
+      - name: Deploy ws-bridge service
+        run: railway up --service ws-bridge --environment staging --ci
 
   # ============================================================
   # Deploy Production — manual approval, main branch only
@@ -185,23 +176,14 @@ jobs:
     needs: [deploy-staging]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: production
+    container: ghcr.io/railwayapp/cli:latest
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli
+      - name: Deploy market service
+        run: railway up --service market --environment production --ci
 
-      - name: Deploy to Railway (production)
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          echo "Deploying to Railway production environment..."
-          echo "Market image: ${{ env.IMAGE_PREFIX }}-market:sha-${GITHUB_SHA::7}"
-          echo "WS-Bridge image: ${{ env.IMAGE_PREFIX }}-ws-bridge:sha-${GITHUB_SHA::7}"
-          echo "NATS image: ${{ env.IMAGE_PREFIX }}-nats:sha-${GITHUB_SHA::7}"
-          echo ""
-          echo "Railway deployment commands would go here."
-          echo "Configure via Railway dashboard or CLI once project is set up."
-          # railway up --service market --image $IMAGE_PREFIX-market:sha-${GITHUB_SHA::7}
-          # railway up --service ws-bridge --image $IMAGE_PREFIX-ws-bridge:sha-${GITHUB_SHA::7}
-          # railway up --service nats --image $IMAGE_PREFIX-nats:sha-${GITHUB_SHA::7}
+      - name: Deploy ws-bridge service
+        run: railway up --service ws-bridge --environment production --ci
