@@ -11,6 +11,7 @@ from nats.aio.msg import Msg
 from nats.js.api import DeliverPolicy
 from nats.js.client import JetStreamContext
 
+from streetmarket.helpers.sanitize import sanitize_message
 from streetmarket.models.envelope import Envelope
 from streetmarket.models.topics import to_nats_subject
 
@@ -75,6 +76,9 @@ class MarketBusClient:
             raise RuntimeError("Not connected. Call connect() first.")
 
         subject = to_nats_subject(topic)
+        envelope = envelope.model_copy(
+            update={"message": sanitize_message(envelope.message)}
+        )
         data = envelope.model_dump_json(by_alias=True).encode()
         await self._js.publish(subject, data)
         logger.debug("Published to %s: %s", subject, envelope.id)
