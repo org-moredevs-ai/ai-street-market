@@ -908,9 +908,7 @@ class TestGovernorAgent:
         assert len(square_msgs) == 1
         assert "Welcome" in square_msgs[0][1].message
 
-    def test_topics_includes_thoughts(
-        self, ledger: _TestLedger, registry: AgentRegistry
-    ) -> None:
+    def test_topics_includes_thoughts(self, ledger: _TestLedger, registry: AgentRegistry) -> None:
         agent, _, _, _ = self._make_governor(ledger, registry)
         topics = agent.topics_to_subscribe()
         assert Topics.THOUGHTS in topics
@@ -927,9 +925,7 @@ class TestGovernorThoughtScoring:
     ) -> tuple:
         from services.governor.governor import GovernorAgent
 
-        ranking = RankingEngine(
-            _minimal_season_config(), ledger, registry
-        )
+        ranking = RankingEngine(_minimal_season_config(), ledger, registry)
         llm_fn = _make_llm_fn(llm_response)
         publish_fn, collected = _make_publish_fn()
         subscribe_fn, subscriptions = _make_subscribe_fn()
@@ -980,9 +976,7 @@ class TestGovernorThoughtScoring:
                 "reason": "Great insight",
             }
         )
-        agent, _, collected, _, _ = self._make_governor_with_ranking(
-            ledger, registry, llm_response
-        )
+        agent, _, collected, _, _ = self._make_governor_with_ranking(ledger, registry, llm_response)
 
         thought_msg = _msg_envelope(
             topic=Topics.THOUGHTS,
@@ -1031,9 +1025,7 @@ class TestGovernorThoughtScoring:
                 "reason": "Spam",
             }
         )
-        agent, _, _, _, ranking = self._make_governor_with_ranking(
-            ledger, registry, llm_response
-        )
+        agent, _, _, _, ranking = self._make_governor_with_ranking(ledger, registry, llm_response)
 
         thought_msg = _msg_envelope(
             topic=Topics.THOUGHTS,
@@ -1044,15 +1036,9 @@ class TestGovernorThoughtScoring:
 
         assert ranking._community_scores.get("spammer", 0.0) == 0.0
 
-    async def test_score_clamped_to_max(
-        self, ledger: _TestLedger, registry: AgentRegistry
-    ) -> None:
-        llm_response = json.dumps(
-            {"score": 10.0, "response": "Amazing!", "reason": "Best ever"}
-        )
-        agent, _, _, _, ranking = self._make_governor_with_ranking(
-            ledger, registry, llm_response
-        )
+    async def test_score_clamped_to_max(self, ledger: _TestLedger, registry: AgentRegistry) -> None:
+        llm_response = json.dumps({"score": 10.0, "response": "Amazing!", "reason": "Best ever"})
+        agent, _, _, _, ranking = self._make_governor_with_ranking(ledger, registry, llm_response)
 
         thought_msg = _msg_envelope(
             topic=Topics.THOUGHTS,
@@ -1098,26 +1084,16 @@ class TestGovernorThoughtScoring:
     async def test_multiple_thoughts_accumulate_score(
         self, ledger: _TestLedger, registry: AgentRegistry
     ) -> None:
-        agent, llm_fn, _, _, ranking = self._make_governor_with_ranking(
-            ledger, registry
-        )
+        agent, llm_fn, _, _, ranking = self._make_governor_with_ranking(ledger, registry)
 
         # First thought: score 2.0
-        llm_fn.return_value = json.dumps(
-            {"score": 2.0, "response": "", "reason": "ok"}
-        )
-        msg1 = _msg_envelope(
-            topic=Topics.THOUGHTS, message="Thought 1", from_agent="farmer"
-        )
+        llm_fn.return_value = json.dumps({"score": 2.0, "response": "", "reason": "ok"})
+        msg1 = _msg_envelope(topic=Topics.THOUGHTS, message="Thought 1", from_agent="farmer")
         await agent.on_message(msg1)
 
         # Second thought: score 3.0
-        llm_fn.return_value = json.dumps(
-            {"score": 3.0, "response": "Nice!", "reason": "good"}
-        )
-        msg2 = _msg_envelope(
-            topic=Topics.THOUGHTS, message="Thought 2", from_agent="farmer"
-        )
+        llm_fn.return_value = json.dumps({"score": 3.0, "response": "Nice!", "reason": "good"})
+        msg2 = _msg_envelope(topic=Topics.THOUGHTS, message="Thought 2", from_agent="farmer")
         await agent.on_message(msg2)
 
         assert ranking._community_scores.get("farmer", 0.0) == 5.0
