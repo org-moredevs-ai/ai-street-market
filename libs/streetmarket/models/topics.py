@@ -17,6 +17,7 @@ class Topics:
     WEATHER = "/market/weather"
     PROPERTY = "/market/property"
     NEWS = "/market/news"
+    THOUGHTS = "/market/thoughts"
 
     # System (infrastructure only — trading agents cannot access)
     TICK = "/system/tick"
@@ -38,6 +39,7 @@ class Topics:
             cls.WEATHER,
             cls.PROPERTY,
             cls.NEWS,
+            cls.THOUGHTS,
         ]
 
     @classmethod

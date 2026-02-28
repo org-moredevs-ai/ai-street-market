@@ -18,6 +18,7 @@ from streetmarket.policy.engine import (
     WinningCriterion,
     WorldPolicy,
 )
+from streetmarket.ranking.engine import RankingEngine
 from streetmarket.registry.registry import AgentRegistry
 from streetmarket.world_state.store import WorldStateStore
 
@@ -105,12 +106,15 @@ def world_policy() -> WorldPolicy:
 
 
 @pytest.fixture
-def infrastructure() -> dict:
+def infrastructure(season_config) -> dict:
     """Create shared infrastructure instances."""
+    ledger = InMemoryLedger()
+    registry = AgentRegistry()
     return {
-        "ledger": InMemoryLedger(),
-        "registry": AgentRegistry(),
+        "ledger": ledger,
+        "registry": registry,
         "world_state": WorldStateStore(),
+        "ranking_engine": RankingEngine(season_config, ledger, registry),
     }
 
 

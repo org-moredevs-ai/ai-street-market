@@ -18,6 +18,8 @@ from streetmarket.ledger.memory import InMemoryLedger
 from streetmarket.models.envelope import Envelope
 from streetmarket.models.ledger_event import EventTypes, LedgerEvent
 from streetmarket.models.topics import Topics
+from streetmarket.policy.engine import SeasonConfig, WinningCriterion
+from streetmarket.ranking.engine import RankingEngine
 from streetmarket.registry.registry import AgentRegistry
 from streetmarket.world_state.store import (
     Field,
@@ -25,6 +27,31 @@ from streetmarket.world_state.store import (
     Resource,
     WorldStateStore,
 )
+
+
+def _minimal_season_config() -> SeasonConfig:
+    """Create a minimal SeasonConfig for tests that need RankingEngine."""
+    from datetime import datetime, timezone
+
+    return SeasonConfig(
+        name="Test Season",
+        number=1,
+        description="A test season",
+        starts_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        ends_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+        tick_interval_seconds=60,
+        world_policy_file="test.yaml",
+        biases={},
+        agent_defaults={},
+        winning_criteria=[
+            WinningCriterion(metric="community_contribution", weight=1.0),
+        ],
+        awards=[],
+        closing_percent=10,
+        preparation_hours=1,
+        next_season_hint="",
+        characters={},
+    )
 
 
 class _TestLedger(InMemoryLedger):
@@ -880,6 +907,220 @@ class TestGovernorAgent:
         square_msgs = [(t, e) for t, e in collected if t == Topics.SQUARE]
         assert len(square_msgs) == 1
         assert "Welcome" in square_msgs[0][1].message
+
+    def test_topics_includes_thoughts(
+        self, ledger: _TestLedger, registry: AgentRegistry
+    ) -> None:
+        agent, _, _, _ = self._make_governor(ledger, registry)
+        topics = agent.topics_to_subscribe()
+        assert Topics.THOUGHTS in topics
+
+
+class TestGovernorThoughtScoring:
+    """Tests for Governor thought scoring — community contribution points."""
+
+    def _make_governor_with_ranking(
+        self,
+        ledger: _TestLedger,
+        registry: AgentRegistry,
+        llm_response: str = "{}",
+    ) -> tuple:
+        from services.governor.governor import GovernorAgent
+
+        ranking = RankingEngine(
+            _minimal_season_config(), ledger, registry
+        )
+        llm_fn = _make_llm_fn(llm_response)
+        publish_fn, collected = _make_publish_fn()
+        subscribe_fn, subscriptions = _make_subscribe_fn()
+
+        agent = GovernorAgent(
+            agent_id="governor",
+            character_name="Lord Governor",
+            personality="Stern but fair",
+            publish_fn=publish_fn,
+            subscribe_fn=subscribe_fn,
+            llm_fn=llm_fn,
+            ledger=ledger,
+            registry=registry,
+            ranking_engine=ranking,
+        )
+        return agent, llm_fn, collected, subscriptions, ranking
+
+    async def test_high_score_thought_records_community_contribution(
+        self, ledger: _TestLedger, registry: AgentRegistry
+    ) -> None:
+        llm_response = json.dumps(
+            {
+                "score": 4.0,
+                "response": "Brilliant insight, farmer!",
+                "reason": "Shows deep understanding of market dynamics",
+            }
+        )
+        agent, _, collected, _, ranking = self._make_governor_with_ranking(
+            ledger, registry, llm_response
+        )
+
+        thought_msg = _msg_envelope(
+            topic=Topics.THOUGHTS,
+            message="I think wheat prices will rise because storms reduce supply.",
+            from_agent="farmer",
+        )
+        await agent.on_message(thought_msg)
+
+        assert ranking._community_scores.get("farmer", 0.0) == 4.0
+
+    async def test_high_score_thought_publishes_response(
+        self, ledger: _TestLedger, registry: AgentRegistry
+    ) -> None:
+        llm_response = json.dumps(
+            {
+                "score": 4.0,
+                "response": "Well said, farmer!",
+                "reason": "Great insight",
+            }
+        )
+        agent, _, collected, _, _ = self._make_governor_with_ranking(
+            ledger, registry, llm_response
+        )
+
+        thought_msg = _msg_envelope(
+            topic=Topics.THOUGHTS,
+            message="Market dynamics insight here.",
+            from_agent="farmer",
+        )
+        await agent.on_message(thought_msg)
+
+        square_msgs = [(t, e) for t, e in collected if t == Topics.SQUARE]
+        assert len(square_msgs) == 1
+        assert "Well said" in square_msgs[0][1].message
+
+    async def test_low_score_thought_no_public_response(
+        self, ledger: _TestLedger, registry: AgentRegistry
+    ) -> None:
+        llm_response = json.dumps(
+            {
+                "score": 1.5,
+                "response": "Noted.",
+                "reason": "Trivial observation",
+            }
+        )
+        agent, _, collected, _, ranking = self._make_governor_with_ranking(
+            ledger, registry, llm_response
+        )
+
+        thought_msg = _msg_envelope(
+            topic=Topics.THOUGHTS,
+            message="It is sunny today.",
+            from_agent="farmer",
+        )
+        await agent.on_message(thought_msg)
+
+        # Score is recorded but no public response (< 3.0)
+        assert ranking._community_scores.get("farmer", 0.0) == 1.5
+        square_msgs = [(t, e) for t, e in collected if t == Topics.SQUARE]
+        assert len(square_msgs) == 0
+
+    async def test_zero_score_not_recorded(
+        self, ledger: _TestLedger, registry: AgentRegistry
+    ) -> None:
+        llm_response = json.dumps(
+            {
+                "score": 0.0,
+                "response": "",
+                "reason": "Spam",
+            }
+        )
+        agent, _, _, _, ranking = self._make_governor_with_ranking(
+            ledger, registry, llm_response
+        )
+
+        thought_msg = _msg_envelope(
+            topic=Topics.THOUGHTS,
+            message="...",
+            from_agent="spammer",
+        )
+        await agent.on_message(thought_msg)
+
+        assert ranking._community_scores.get("spammer", 0.0) == 0.0
+
+    async def test_score_clamped_to_max(
+        self, ledger: _TestLedger, registry: AgentRegistry
+    ) -> None:
+        llm_response = json.dumps(
+            {"score": 10.0, "response": "Amazing!", "reason": "Best ever"}
+        )
+        agent, _, _, _, ranking = self._make_governor_with_ranking(
+            ledger, registry, llm_response
+        )
+
+        thought_msg = _msg_envelope(
+            topic=Topics.THOUGHTS,
+            message="Deep insight.",
+            from_agent="genius",
+        )
+        await agent.on_message(thought_msg)
+
+        assert ranking._community_scores.get("genius", 0.0) == 5.0
+
+    async def test_thoughts_ignored_without_ranking_engine(
+        self, ledger: _TestLedger, registry: AgentRegistry
+    ) -> None:
+        """Governor without ranking_engine silently ignores thoughts."""
+        from services.governor.governor import GovernorAgent
+
+        llm_fn = _make_llm_fn()
+        publish_fn, collected = _make_publish_fn()
+        subscribe_fn, _ = _make_subscribe_fn()
+
+        agent = GovernorAgent(
+            agent_id="governor",
+            character_name="Lord Governor",
+            personality="Stern",
+            publish_fn=publish_fn,
+            subscribe_fn=subscribe_fn,
+            llm_fn=llm_fn,
+            ledger=ledger,
+            registry=registry,
+        )
+
+        thought_msg = _msg_envelope(
+            topic=Topics.THOUGHTS,
+            message="Some thought.",
+            from_agent="farmer",
+        )
+        await agent.on_message(thought_msg)
+
+        # LLM should not be called, no messages published
+        llm_fn.assert_not_called()
+        assert len(collected) == 0
+
+    async def test_multiple_thoughts_accumulate_score(
+        self, ledger: _TestLedger, registry: AgentRegistry
+    ) -> None:
+        agent, llm_fn, _, _, ranking = self._make_governor_with_ranking(
+            ledger, registry
+        )
+
+        # First thought: score 2.0
+        llm_fn.return_value = json.dumps(
+            {"score": 2.0, "response": "", "reason": "ok"}
+        )
+        msg1 = _msg_envelope(
+            topic=Topics.THOUGHTS, message="Thought 1", from_agent="farmer"
+        )
+        await agent.on_message(msg1)
+
+        # Second thought: score 3.0
+        llm_fn.return_value = json.dumps(
+            {"score": 3.0, "response": "Nice!", "reason": "good"}
+        )
+        msg2 = _msg_envelope(
+            topic=Topics.THOUGHTS, message="Thought 2", from_agent="farmer"
+        )
+        await agent.on_message(msg2)
+
+        assert ranking._community_scores.get("farmer", 0.0) == 5.0
 
 
 # ===========================================================================

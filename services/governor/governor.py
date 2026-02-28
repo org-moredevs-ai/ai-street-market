@@ -1,8 +1,9 @@
-"""Governor — trade validation, onboarding, teaching, and fining.
+"""Governor — trade validation, onboarding, teaching, fining, and thought scoring.
 
-Subscribes to /market/square (joins, announcements) and /market/trades
-(trade proposals). Reasons about legitimacy using LLM, then emits
-structured events for the deterministic layer.
+Subscribes to /market/square (joins, announcements), /market/trades
+(trade proposals), and /market/thoughts (agent reasoning).
+Reasons about legitimacy using LLM, then emits structured events
+for the deterministic layer. Scores shared thoughts for community contribution.
 """
 
 from __future__ import annotations
@@ -15,9 +16,14 @@ from streetmarket.ledger.interfaces import LedgerInterface
 from streetmarket.models.envelope import Envelope
 from streetmarket.models.ledger_event import EventTypes
 from streetmarket.models.topics import Topics
+from streetmarket.ranking.engine import RankingEngine
 from streetmarket.registry.registry import AgentRegistry
 
 logger = logging.getLogger(__name__)
+
+# Scoring range for thought quality (awarded as community contribution points)
+THOUGHT_MIN_SCORE = 0.0
+THOUGHT_MAX_SCORE = 5.0
 
 
 class GovernorAgent(MarketAgent):
@@ -28,6 +34,7 @@ class GovernorAgent(MarketAgent):
     - Should a new agent be accepted or rejected?
     - Should an agent be fined for bad behavior?
     - What should agents know about market customs?
+    - How valuable is a shared thought? (community contribution)
     """
 
     def __init__(
@@ -35,6 +42,7 @@ class GovernorAgent(MarketAgent):
         *,
         ledger: LedgerInterface,
         registry: AgentRegistry,
+        ranking_engine: RankingEngine | None = None,
         world_policy_text: str = "",
         season_description: str = "",
         **kwargs: Any,
@@ -42,11 +50,12 @@ class GovernorAgent(MarketAgent):
         super().__init__(**kwargs)
         self._ledger = ledger
         self._registry = registry
+        self._ranking = ranking_engine
         self._world_policy_text = world_policy_text
         self._season_description = season_description
 
     def topics_to_subscribe(self) -> list[str]:
-        return [Topics.TICK, Topics.SQUARE, Topics.TRADES]
+        return [Topics.TICK, Topics.SQUARE, Topics.TRADES, Topics.THOUGHTS]
 
     def build_system_prompt(self) -> str:
         return (
@@ -61,7 +70,9 @@ class GovernorAgent(MarketAgent):
             "2. TRADE VALIDATION: When agents propose trades on /market/trades,\n"
             "   evaluate if the trade is fair and legitimate.\n"
             "3. TEACHING: Help newcomers understand market customs.\n"
-            "4. FINING: Punish bad behavior (attempted fraud, disruption).\n\n"
+            "4. FINING: Punish bad behavior (attempted fraud, disruption).\n"
+            "5. THOUGHT SCORING: When agents share their reasoning on /market/thoughts,\n"
+            "   evaluate the quality and award community contribution points.\n\n"
             "For ONBOARDING, respond with JSON:\n"
             "{\n"
             '  "decision": "accept" or "reject",\n'
@@ -82,6 +93,14 @@ class GovernorAgent(MarketAgent):
             '  "total": 5.0,\n'
             '  "reason": "why approved or rejected"\n'
             "}\n\n"
+            "For THOUGHT SCORING, respond with JSON:\n"
+            "{\n"
+            '  "score": 0.0 to 5.0,\n'
+            '  "response": "Brief in-character acknowledgment (or empty if low score)",\n'
+            '  "reason": "why this score"\n'
+            "}\n"
+            "Score guide: 0=spam/empty, 1=trivial, 2=basic reasoning,\n"
+            "3=good insight, 4=very educational, 5=brilliant strategy reveal.\n\n"
             "For TEACHING or FINING, respond with JSON:\n"
             "{\n"
             '  "action": "teach" or "fine",\n'
@@ -92,11 +111,13 @@ class GovernorAgent(MarketAgent):
         )
 
     async def on_message(self, envelope: Envelope) -> None:
-        """Process incoming messages from square and trades."""
+        """Process incoming messages from square, trades, and thoughts."""
         if envelope.topic == Topics.SQUARE:
             await self._handle_square_message(envelope)
         elif envelope.topic == Topics.TRADES:
             await self._handle_trade_message(envelope)
+        elif envelope.topic == Topics.THOUGHTS:
+            await self._handle_thought_message(envelope)
 
     async def _handle_square_message(self, envelope: Envelope) -> None:
         """Handle messages on /market/square — primarily onboarding."""
@@ -198,4 +219,43 @@ class GovernorAgent(MarketAgent):
             await self.emit_event(event)
 
         if response:
+            await self.respond(Topics.SQUARE, response)
+
+    async def _handle_thought_message(self, envelope: Envelope) -> None:
+        """Handle shared thoughts on /market/thoughts — score for community contribution."""
+        if not self._ranking:
+            return
+
+        context = (
+            f"An agent shared their reasoning on /market/thoughts.\n"
+            f"Agent: {envelope.from_agent}\n"
+            f"Their thought: {envelope.message}\n"
+            f"Current tick: {self._tick}\n\n"
+            "Score this thought from 0 to 5 based on quality:\n"
+            "- Is it insightful about market dynamics?\n"
+            "- Does it reveal genuine strategic thinking?\n"
+            "- Would viewers learn something from reading this?\n"
+            "- Is it entertaining or engaging?\n"
+            "Ignore spam, empty thoughts, or low-effort messages.\n"
+            "Respond with your scoring JSON."
+        )
+
+        result = await self.reason_json(context)
+        if not result:
+            return
+
+        score = float(result.get("score", 0.0))
+        score = max(THOUGHT_MIN_SCORE, min(THOUGHT_MAX_SCORE, score))
+
+        if score > 0:
+            self._ranking.record_community_contribution(envelope.from_agent, score)
+            logger.info(
+                "Thought scored: %s gets %.1f community points",
+                envelope.from_agent,
+                score,
+            )
+
+        # Only respond publicly for high-quality thoughts (3+)
+        response = result.get("response", "")
+        if response and score >= 3.0:
             await self.respond(Topics.SQUARE, response)

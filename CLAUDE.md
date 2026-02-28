@@ -84,6 +84,7 @@ See `docs/PROTOCOL-V2.md` for full specification.
 /market/weather        — Meteo forecasts, Nature updates
 /market/property       — Landlord listings, rental agreements
 /market/news           — Town Crier narrations
+/market/thoughts       — Agent reasoning shared publicly (community contribution)
 /system/tick           — Tick clock (deterministic, infrastructure only)
 /system/ledger         — Internal structured events (invisible to trading agents)
 /agent/{id}/inbox      — Direct messages to specific agents

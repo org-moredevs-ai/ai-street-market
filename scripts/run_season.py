@@ -161,6 +161,7 @@ def create_market_agents(
     ledger: InMemoryLedger,
     registry: AgentRegistry,
     world_state: WorldStateStore,
+    ranking_engine: RankingEngine,
     publish_fn: Any,
     subscribe_fn: Any,
 ) -> list[MarketAgent]:
@@ -185,6 +186,7 @@ def create_market_agents(
             llm_config=gov_config,
             ledger=ledger,
             registry=registry,
+            ranking_engine=ranking_engine,
             world_policy_text=world_policy.raw_text,
             season_description=season_config.description,
         )
@@ -424,6 +426,7 @@ async def main(argv: list[str] | None = None) -> None:
             ledger=ledger,
             registry=registry,
             world_state=world_state,
+            ranking_engine=ranking_engine,
             publish_fn=nats_client.publish,
             subscribe_fn=nats_client.subscribe,
         )

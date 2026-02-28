@@ -113,8 +113,8 @@ class TestConnection:
 
         assert agent.is_connected
         # Should subscribe to: tick, square, trades, bank, weather,
-        # property, news, inbox = 8 topics
-        assert mock_client.subscribe.call_count == 8
+        # property, news, thoughts, inbox = 9 topics
+        assert mock_client.subscribe.call_count == 9
 
         subscribed_topics = [call.args[0] for call in mock_client.subscribe.call_args_list]
         assert Topics.TICK in subscribed_topics
@@ -124,6 +124,7 @@ class TestConnection:
         assert Topics.WEATHER in subscribed_topics
         assert Topics.PROPERTY in subscribed_topics
         assert Topics.NEWS in subscribed_topics
+        assert Topics.THOUGHTS in subscribed_topics
         assert Topics.agent_inbox("test-agent") in subscribed_topics
 
     async def test_disconnect(self, agent):
@@ -230,6 +231,14 @@ class TestCommunication:
         topic, envelope = agent._mock_client.publish.call_args.args
         assert topic == Topics.PROPERTY
         assert "properties" in envelope.message.lower()
+
+    async def test_share_thought(self, connected_agent):
+        agent = connected_agent
+        await agent.share_thought("I think wheat prices will rise due to storms.")
+        agent._mock_client.publish.assert_awaited_once()
+        topic, envelope = agent._mock_client.publish.call_args.args
+        assert topic == Topics.THOUGHTS
+        assert "wheat" in envelope.message.lower()
 
     async def test_say_without_connect_raises(self):
         agent = StubAgent(agent_id="test-agent")

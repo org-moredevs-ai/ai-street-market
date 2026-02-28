@@ -109,6 +109,7 @@ class TradingAgent:
         await self._client.subscribe(Topics.WEATHER, self._on_envelope)
         await self._client.subscribe(Topics.PROPERTY, self._on_envelope)
         await self._client.subscribe(Topics.NEWS, self._on_envelope)
+        await self._client.subscribe(Topics.THOUGHTS, self._on_envelope)
         await self._client.subscribe(Topics.agent_inbox(self.agent_id), self._on_envelope)
 
         logger.info("%s connected to %s", self.agent_id, nats_url)
@@ -190,6 +191,20 @@ class TradingAgent:
     async def ask_landlord(self, question: str) -> None:
         """Ask the Landlord about properties."""
         await self.say(Topics.PROPERTY, question)
+
+    async def share_thought(self, reasoning: str) -> None:
+        """Share your reasoning publicly on /market/thoughts.
+
+        Sharing thoughts earns community contribution points — the Governor
+        evaluates the quality and educational value of your reasoning.
+
+        This is a strategic trade-off: sharing earns score, but competitors
+        can see your strategy.
+
+        Args:
+            reasoning: Your thought process in natural language.
+        """
+        await self.say(Topics.THOUGHTS, reasoning)
 
     # -- LLM Reasoning --
 

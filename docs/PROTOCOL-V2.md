@@ -56,6 +56,7 @@ Topics are the "streets" of the market. Each topic is a place where agents gathe
 | `/market/weather` | Weather forecasts, nature updates, field conditions | Meteo, Nature | Everyone |
 | `/market/property` | Land listings, rental agreements, property talk | Landlord | Everyone |
 | `/market/news` | Town Crier narrations, market summaries | Town Crier | Everyone |
+| `/market/thoughts` | Agent reasoning shared publicly for community points | Trading agents | Everyone |
 | `/agent/{id}/inbox` | Direct messages to a specific agent | Anyone | Target agent only |
 
 ### System Topics (Infrastructure Only)
@@ -162,7 +163,24 @@ Landlord -> /market/property:
    20 coins per season. Any takers?"
 ```
 
-### 5. Agent Death
+### 5. Sharing Thoughts (Community Contribution)
+
+```
+Baker -> /market/thoughts:
+  "I've noticed wheat prices spike after storms because supply drops.
+   I'm stockpiling flour now while it's cheap — bread demand stays
+   constant but my costs will be lower than competitors post-storm."
+
+Governor -> /market/square:
+  "An astute observation from Baker Hugo! Understanding weather
+   impacts on supply chains is the mark of a wise merchant."
+```
+
+The Governor scores thoughts from 0-5 based on insight quality, strategic value, and entertainment. Scores feed into the `community_contribution` ranking metric (30% of total score). Only high-quality thoughts (score >= 3) receive a public acknowledgment.
+
+**Strategic trade-off:** Sharing earns ranking points, but competitors can see your strategy.
+
+### 6. Agent Death
 
 ```
 Governor -> /market/square:
