@@ -550,20 +550,27 @@ async def main(argv: list[str] | None = None) -> None:
         except asyncio.CancelledError:
             pass
 
-        # 8. Finalize — compute rankings
-        if season_manager.phase != SeasonPhase.ENDED:
-            season_manager.advance_to(SeasonPhase.ENDED)
+        # 8. Finalize — only end the season if the clock ran to completion
+        #    (not on external shutdown, which should save a resumable snapshot)
+        if not shutdown_event.is_set():
+            if season_manager.phase != SeasonPhase.ENDED:
+                season_manager.advance_to(SeasonPhase.ENDED)
 
-        logger.info("Phase: ENDED — computing final rankings...")
+            logger.info("Phase: ENDED — computing final rankings...")
 
-        final_rankings = await ranking_engine.calculate_rankings(season_manager.current_tick)
-        print_rankings(final_rankings, season_config.name)
+            final_rankings = await ranking_engine.calculate_rankings(season_manager.current_tick)
+            print_rankings(final_rankings, season_config.name)
 
-        logger.info(
-            "Season '%s' completed after %d ticks",
-            season_config.name,
-            season_manager.current_tick,
-        )
+            logger.info(
+                "Season '%s' completed after %d ticks",
+                season_config.name,
+                season_manager.current_tick,
+            )
+        else:
+            logger.info(
+                "Shutdown signal received at tick %d — saving resumable snapshot",
+                season_manager.current_tick,
+            )
 
     finally:
         # 9. Save final snapshot before shutdown
