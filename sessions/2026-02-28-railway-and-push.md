@@ -167,17 +167,62 @@ Multiple issues discovered during the first live E2E test:
 - Viewer repo: `576265b` — /api/config route, runtime WS URL resolution
 - Viewer repo: `17583a1` — world-panel null guard fix
 
-## Current state (2026-02-28 21:30 UTC)
-- Market: Running, tick ~35, Phase OPEN, 30s tick interval
-- ws-bridge: Running, forwarding state updates
-- NATS: Running
-- Viewer: Deployed, connects to ws-bridge (needs browser to verify JS)
-- LLM: Daily quota exhausted, resets midnight UTC
-- WebSocket: Verified working via Python test
+### 13. Staging/production environment sync
+
+Staging was created by duplicating production early on, but all manual fixes during E2E debugging were only applied to production. This caused completely different behavior between environments.
+
+**Staging issues found and fixed:**
+
+| Issue | Production | Staging (before) | Fix |
+|---|---|---|---|
+| `DEFAULT_MODEL` | `gemini-2.5-flash-lite` (paid) | `gemma-3-12b-it:free` (rate-limited) | Updated to paid model |
+| `TICK_OVERRIDE` | `30` | `2` (too fast for rate limits) | Changed to 30 |
+| `PORT` | `9090` | missing | Set to 9090 |
+| `SERVICE_ROLE` | `market` | missing | Set to `market` |
+| `startCommand` | empty (uses ENTRYPOINT) | `scripts/entrypoint-market.sh` (broken PATH) | Cleared via GraphQL |
+| Viewer `NEXT_PUBLIC_WS_URL` | `wss://market-production-...` | `wss://ws-bridge-staging...` (standalone) | Updated to market bridge URL |
+| Docker Hub image | current | stale (old code) | CI rebuilt |
+| Snapshot | clean | tick-3233 ENDED | Cleared with `CLEAR_SNAPSHOTS=1` |
+| `RAILWAY_TOKEN` | valid | invalid (old env ID) | New token via GraphQL |
+
+**CI fixes:**
+- Test `test_load_season_config` expected original dates (Mar 15) but `season-1.yaml` was changed to Feb 28 — updated test
+- Docker build used `target: market` and `target: ws-bridge` but Dockerfile is now single-stage — removed targets
+- Added `workflow_dispatch` trigger for manual CI reruns
+
+**Commits:**
+- `b9b243d` — remove `--no-bridge`, update session journal, add `.playwright-mcp/` to `.gitignore`
+- `c1da2c9` — fix test dates, remove Docker build targets
+- `6a66c3a` — add `workflow_dispatch` trigger
+
+### 14. CI pipeline — ALL GREEN (run 22530279521)
+- Lint ✅ (35s)
+- Test ✅ (25s) — 420 tests
+- Build & Push Docker ✅ (1m16s) — 2 images (unified, no targets)
+- Deploy to Staging ✅ (11m21s)
+- Deploy to Production ✅ (1m58s)
+
+## Current state (2026-02-28 22:45 UTC)
+
+### Production
+- Market: Running, Phase OPEN, 30s tick interval, bridge on port 9090
+- LLM: `google/gemini-2.5-flash-lite` (paid), calls succeeding (HTTP 200)
+- Viewer: `viewer-production-95af.up.railway.app` → `wss://market-production-cd1e.up.railway.app`
+- WebSocket: Full world state (weather, season, agents, fields, buildings)
+
+### Staging
+- Market: Running, Phase OPEN, fresh start (tick 0), bridge on port 9090
+- LLM: `google/gemini-2.5-flash-lite` (paid), same config as production
+- Viewer: `viewer-staging-3e74.up.railway.app` → `wss://market-staging.up.railway.app`
+- WebSocket: Full world state verified via Python test
+
+### Both environments verified
+- Market responds on HTTPS (WebSocket server message)
+- Viewer `/api/config` returns correct WS URL
+- WebSocket sends full state: weather=sunny, season=open
 
 ## Next step
-- Wait for OpenRouter daily quota reset (midnight UTC)
-- Verify viewer displays market messages once LLM agents generate content
-- Consider switching to a paid model if free quota is too limiting
 - Run demo agents (locally or deploy) to generate market traffic
-- Commit session journal update
+- Verify viewer displays market messages in browser
+- Consider deploying agents to Railway as a separate service
+- Update MEMORY.md with deployment lessons learned
