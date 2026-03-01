@@ -1,7 +1,23 @@
 """AI Street Market — shared protocol library (v2)."""
 
-from streetmarket.agent import LLMConfig, MarketAgent, TradingAgent, extract_json
+from streetmarket.agent import (
+    LLMConfig,
+    ManagedAgent,
+    MarketAgent,
+    TradingAgent,
+    create_managed_agent,
+    extract_json,
+)
 from streetmarket.client.nats_client import MarketBusClient
+from streetmarket.db import (
+    AgentConfig,
+    AgentStats,
+    AgentStatus,
+    User,
+    close_database,
+    generate_agent_id,
+    get_database,
+)
 from streetmarket.helpers.factory import create_message, parse_message
 from streetmarket.ledger import InMemoryLedger, LedgerInterface
 from streetmarket.models.envelope import Envelope
@@ -25,9 +41,19 @@ __all__ = [
     "MarketBusClient",
     # Agent utilities
     "LLMConfig",
+    "ManagedAgent",
     "MarketAgent",
     "TradingAgent",
+    "create_managed_agent",
     "extract_json",
+    # Database
+    "AgentConfig",
+    "AgentStats",
+    "AgentStatus",
+    "User",
+    "close_database",
+    "generate_agent_id",
+    "get_database",
     # Models
     "Envelope",
     "EventTypes",

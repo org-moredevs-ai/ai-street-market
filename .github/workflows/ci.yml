@@ -166,6 +166,12 @@ jobs:
       - name: Deploy ws-bridge service
         run: railway up --service ws-bridge --environment staging --ci
 
+      - name: Deploy agent-manager service
+        run: railway up --service agent-manager --environment staging --ci
+
+      - name: Deploy agent-runner service
+        run: railway up --service agent-runner --environment staging --ci
+
   # ============================================================
   # Deploy Production — manual approval, main branch only
   # ============================================================
@@ -186,3 +192,9 @@ jobs:
 
       - name: Deploy ws-bridge service
         run: railway up --service ws-bridge --environment production --ci
+
+      - name: Deploy agent-manager service
+        run: railway up --service agent-manager --environment production --ci
+
+      - name: Deploy agent-runner service
+        run: railway up --service agent-runner --environment production --ci

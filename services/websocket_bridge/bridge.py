@@ -309,6 +309,35 @@ class WebSocketBridge:
                 "progress": self._season.progress_percent,
             }
 
+        if self._ranking and self._ranking._season_history:
+            # Get latest season rankings
+            latest_season = max(self._ranking._season_history.keys())
+            entries = self._ranking._season_history[latest_season]
+            snapshot["rankings"] = [
+                {
+                    "rank": e.rank,
+                    "agent_id": e.agent_id,
+                    "owner": e.owner,
+                    "total_score": e.total_score,
+                    "scores": e.scores,
+                    "state": e.state,
+                }
+                for e in entries
+            ]
+
+            overall = self._ranking.get_overall_rankings()
+            if overall:
+                snapshot["overall_rankings"] = [
+                    {
+                        "rank": o.rank,
+                        "owner": o.owner,
+                        "total_score": o.total_score,
+                        "seasons_played": o.seasons_played,
+                        "wins": o.wins,
+                    }
+                    for o in overall
+                ]
+
         return snapshot
 
 

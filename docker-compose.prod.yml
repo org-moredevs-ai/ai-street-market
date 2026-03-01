@@ -26,6 +26,21 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # -- MongoDB for managed agent configs --
+  mongodb:
+    image: mongo:7
+    container_name: streetmarket-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
   # -- Market service (season runner + all 6 market agents) --
   market:
     build:
@@ -67,6 +82,47 @@ services:
       - WS_PORT=9090
     restart: unless-stopped
 
+  # -- Agent Manager (NATS request-reply CRUD for managed agents) --
+  agent-manager:
+    build:
+      context: .
+      target: market
+    container_name: streetmarket-agent-manager
+    depends_on:
+      nats:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    environment:
+      - SERVICE_ROLE=agent-manager
+      - NATS_URL=nats://nats:4222
+      - MONGODB_URL=mongodb://mongodb:27017
+      - MONGODB_DB=streetmarket
+    restart: unless-stopped
+
+  # -- Agent Runner (loads + runs managed agents from MongoDB) --
+  agent-runner:
+    build:
+      context: .
+      target: market
+    container_name: streetmarket-agent-runner
+    depends_on:
+      nats:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    environment:
+      - SERVICE_ROLE=agent-runner
+      - NATS_URL=nats://nats:4222
+      - MONGODB_URL=mongodb://mongodb:27017
+      - MONGODB_DB=streetmarket
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_API_BASE=${OPENROUTER_API_BASE:-https://openrouter.ai/api/v1}
+      - DEFAULT_MODEL=${DEFAULT_MODEL}
+      - DEFAULT_MAX_TOKENS=${DEFAULT_MAX_TOKENS:-400}
+      - DEFAULT_TEMPERATURE=${DEFAULT_TEMPERATURE:-0.7}
+    restart: unless-stopped
+
   # -- Viewer (placeholder — separate repo) --
   # viewer:
   #   image: hugocasqueiromoredevsai/streetmarket-viewer:latest
@@ -82,3 +138,4 @@ services:
 volumes:
   nats-data:
   market-data:
+  mongo-data:

@@ -10,9 +10,15 @@ case "${SERVICE_ROLE:-market}" in
     ws-bridge)
         exec scripts/entrypoint-bridge.sh
         ;;
+    agent-manager)
+        exec python scripts/run_agent_manager.py
+        ;;
+    agent-runner)
+        exec python scripts/run_agent_runner.py
+        ;;
     *)
         echo "ERROR: Unknown SERVICE_ROLE='${SERVICE_ROLE}'"
-        echo "Valid values: market, ws-bridge"
+        echo "Valid values: market, ws-bridge, agent-manager, agent-runner"
         exit 1
         ;;
 esac
