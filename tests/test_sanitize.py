@@ -11,9 +11,7 @@ from __future__ import annotations
 
 import json
 
-import pytest
 from streetmarket.helpers.sanitize import MAX_MESSAGE_LENGTH, sanitize_message
-
 
 # ===========================================================================
 # Normal text — passes through unchanged
@@ -491,7 +489,10 @@ def test_excessive_newlines_inside_fence() -> None:
 
 def test_realistic_gemini_json_output() -> None:
     """Gemini sometimes wraps the entire response in JSON."""
-    text = '{"from": "baker-hugo", "topic": "/market/square", "message": "I have fresh bread for 5 coins!"}'
+    text = (
+        '{"from": "baker-hugo", "topic": "/market/square",'
+        ' "message": "I have fresh bread for 5 coins!"}'
+    )
     assert sanitize_message(text) == "I have fresh bread for 5 coins!"
 
 
