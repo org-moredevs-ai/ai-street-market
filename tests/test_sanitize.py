@@ -377,26 +377,26 @@ def test_code_fence_with_json_message_unwrapped() -> None:
 
 def test_code_fence_embedded_in_text_not_stripped() -> None:
     """Fences that aren't the ENTIRE message should NOT be stripped."""
-    text = "Here's my offer:\n```json\n{\"price\": 5}\n```\nWhat do you think?"
+    text = 'Here\'s my offer:\n```json\n{"price": 5}\n```\nWhat do you think?'
     assert sanitize_message(text) == text
 
 
 def test_code_fence_with_text_before_not_stripped() -> None:
-    text = "The response is:\n```json\n{\"message\": \"hello\"}\n```"
+    text = 'The response is:\n```json\n{"message": "hello"}\n```'
     assert sanitize_message(text) == text
 
 
 def test_code_fence_with_text_after_not_stripped() -> None:
-    text = "```json\n{\"message\": \"hello\"}\n```\nEnd of response."
+    text = '```json\n{"message": "hello"}\n```\nEnd of response.'
     assert sanitize_message(text) == text
 
 
 def test_double_code_fence_outer_stripped() -> None:
     """Two consecutive code fences — regex matches ^ to $, strips outer fences."""
-    text = "```json\n{\"a\": 1}\n```\n```json\n{\"b\": 2}\n```"
+    text = '```json\n{"a": 1}\n```\n```json\n{"b": 2}\n```'
     result = sanitize_message(text)
     # The anchored regex treats the whole text as one fence, stripping outer ```
-    assert result == "{\"a\": 1}\n```\n```json\n{\"b\": 2}"
+    assert result == '{"a": 1}\n```\n```json\n{"b": 2}'
 
 
 def test_empty_code_fence() -> None:
@@ -536,7 +536,7 @@ def test_idempotent() -> None:
     texts = [
         "Hello world",
         '{"message": "test"}',
-        "```json\n{\"message\": \"test\"}\n```",
+        '```json\n{"message": "test"}\n```',
         "Hello\x00\x01World",
         "a" * 3000,
         "\ufeffBOM text",

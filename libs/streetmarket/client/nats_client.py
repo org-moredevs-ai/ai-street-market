@@ -76,9 +76,7 @@ class MarketBusClient:
             raise RuntimeError("Not connected. Call connect() first.")
 
         subject = to_nats_subject(topic)
-        envelope = envelope.model_copy(
-            update={"message": sanitize_message(envelope.message)}
-        )
+        envelope = envelope.model_copy(update={"message": sanitize_message(envelope.message)})
         data = envelope.model_dump_json(by_alias=True).encode()
         await self._js.publish(subject, data)
         logger.debug("Published to %s: %s", subject, envelope.id)

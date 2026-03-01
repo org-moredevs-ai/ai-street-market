@@ -13,9 +13,7 @@ import re
 MAX_MESSAGE_LENGTH = 2000
 
 # Control characters to strip: \x00-\x1f except \t \n \r, plus \x7f and BOM
-_CONTROL_CHARS_RE = re.compile(
-    r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ufeff]"
-)
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ufeff]")
 
 # Markdown code fences: ```json ... ```, ```text ... ```, ``` ... ```, etc.
 _CODE_FENCE_RE = re.compile(

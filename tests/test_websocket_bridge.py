@@ -253,9 +253,7 @@ class TestStateSnapshots:
     async def test_snapshot_weather_without_celsius(self):
         """When temperature_celsius is None, neither C nor F appear in snapshot."""
         world = WorldStateStore()
-        await world.set_weather(
-            Weather(condition="cloudy", temperature="cool", wind="moderate")
-        )
+        await world.set_weather(Weather(condition="cloudy", temperature="cool", wind="moderate"))
         bridge = _make_bridge(world_state=world)
         snapshot = bridge._build_state_snapshot()
         assert "temperature_celsius" not in snapshot["weather"]
