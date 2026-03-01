@@ -285,6 +285,7 @@ class TestWeather:
         weather = await store.get_weather()
         assert weather.condition == "sunny"
         assert weather.temperature == "mild"
+        assert weather.temperature_celsius is None
         assert weather.wind == "calm"
         assert weather.started_tick == 0
         assert weather.effects == []

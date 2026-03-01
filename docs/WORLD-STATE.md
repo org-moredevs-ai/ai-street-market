@@ -178,6 +178,7 @@ weather:
   current:
     condition: "rainy"          # sunny | cloudy | rainy | stormy | snowy | foggy
     temperature: "mild"         # cold | cool | mild | warm | hot
+    temperature_celsius: 18     # numeric °C (LLM-decided, null when unknown)
     wind: "moderate"            # calm | light | moderate | strong | gale
     started_tick: 38
   forecast:                     # Meteo's predictions (may be wrong!)

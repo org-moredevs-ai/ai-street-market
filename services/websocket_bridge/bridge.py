@@ -267,11 +267,17 @@ class WebSocketBridge:
 
         if self._world_state:
             weather = self._world_state._weather
-            snapshot["weather"] = {
+            weather_dict: dict[str, Any] = {
                 "condition": weather.condition,
                 "temperature": weather.temperature,
                 "wind": weather.wind,
             }
+            if weather.temperature_celsius is not None:
+                weather_dict["temperature_celsius"] = weather.temperature_celsius
+                weather_dict["temperature_fahrenheit"] = round(
+                    weather.temperature_celsius * 9 / 5 + 32
+                )
+            snapshot["weather"] = weather_dict
 
             fields = []
             for f in self._world_state._fields.values():

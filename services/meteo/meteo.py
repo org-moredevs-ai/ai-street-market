@@ -60,11 +60,14 @@ class MeteoAgent(MarketAgent):
             '  "forecast": "Your weather announcement in character (1-2 sentences)",\n'
             '  "condition": "sunny|cloudy|rainy|stormy|foggy|snowy|windy|clear",\n'
             '  "temperature": "hot|warm|mild|cool|cold|freezing",\n'
+            '  "temperature_celsius": 18,\n'
             '  "wind": "calm|light|moderate|strong|gale",\n'
             '  "effects": [{"type": "crop_boost|crop_damage|area_blocked|'
             'construction_delay", "target": "location", "modifier": 1.0, '
             '"reason": "why"}]\n'
             "}\n"
+            "temperature_celsius is an integer in degrees Celsius that matches "
+            "the temperature label.\n"
         )
 
     async def on_tick(self, tick: int) -> None:
@@ -94,13 +97,17 @@ class MeteoAgent(MarketAgent):
             await self.respond(Topics.WEATHER, forecast)
 
         # Emit structured weather_change event
-        event = self._make_event(
-            EventTypes.WEATHER_CHANGE,
-            {
-                "condition": result.get("condition", weather.condition),
-                "temperature": result.get("temperature", weather.temperature),
-                "wind": result.get("wind", weather.wind),
-                "effects": result.get("effects", []),
-            },
-        )
+        event_data: dict[str, Any] = {
+            "condition": result.get("condition", weather.condition),
+            "temperature": result.get("temperature", weather.temperature),
+            "wind": result.get("wind", weather.wind),
+            "effects": result.get("effects", []),
+        }
+        celsius = result.get("temperature_celsius")
+        if celsius is not None:
+            try:
+                event_data["temperature_celsius"] = int(celsius)
+            except (TypeError, ValueError):
+                pass
+        event = self._make_event(EventTypes.WEATHER_CHANGE, event_data)
         await self.emit_event(event)

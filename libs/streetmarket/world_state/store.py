@@ -69,6 +69,7 @@ class Weather:
 
     condition: str = "sunny"  # sunny | cloudy | rainy | stormy | snowy | foggy
     temperature: str = "mild"  # cold | cool | mild | warm | hot
+    temperature_celsius: int | None = None  # numeric °C (LLM-decided)
     wind: str = "calm"  # calm | light | moderate | strong | gale
     started_tick: int = 0
     effects: list[WeatherEffect] = field(default_factory=list)

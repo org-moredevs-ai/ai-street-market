@@ -369,6 +369,7 @@ def _apply_world_state(data: dict[str, Any], world_state: WorldStateStore) -> No
         world_state._weather = Weather(
             condition=weather_data.get("condition", "sunny"),
             temperature=weather_data.get("temperature", "mild"),
+            temperature_celsius=weather_data.get("temperature_celsius"),
             wind=weather_data.get("wind", "calm"),
             started_tick=weather_data.get("started_tick", 0),
             effects=effects,

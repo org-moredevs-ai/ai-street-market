@@ -71,6 +71,8 @@ Sent on connect and periodically. Contains current world state.
     "weather": {
       "condition": "sunny",
       "temperature": "warm",
+      "temperature_celsius": 22,
+      "temperature_fahrenheit": 72,
       "wind": "light"
     },
     "fields": [

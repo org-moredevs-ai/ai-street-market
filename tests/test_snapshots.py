@@ -155,6 +155,7 @@ async def _populate_state(
         Weather(
             condition="rainy",
             temperature="cool",
+            temperature_celsius=12,
             wind="moderate",
             started_tick=5,
             effects=[
@@ -307,6 +308,7 @@ class TestStateSnapshotSaveRestore:
         w = world_state2._weather
         assert w.condition == "rainy"
         assert w.temperature == "cool"
+        assert w.temperature_celsius == 12
         assert w.wind == "moderate"
         assert len(w.effects) == 1
         assert w.effects[0].type == "crop_boost"

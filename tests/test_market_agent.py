@@ -476,6 +476,7 @@ class TestMeteoAgent:
                 "forecast": "A storm approaches!",
                 "condition": "stormy",
                 "temperature": "cold",
+                "temperature_celsius": 2,
                 "wind": "strong",
                 "effects": [],
             }
@@ -515,6 +516,7 @@ class TestMeteoAgent:
                 "forecast": "Clear skies ahead",
                 "condition": "sunny",
                 "temperature": "warm",
+                "temperature_celsius": 24,
                 "wind": "calm",
                 "effects": [
                     {
@@ -538,6 +540,7 @@ class TestMeteoAgent:
         assert event_data["event"] == EventTypes.WEATHER_CHANGE
         assert event_data["data"]["condition"] == "sunny"
         assert event_data["data"]["temperature"] == "warm"
+        assert event_data["data"]["temperature_celsius"] == 24
         assert event_data["data"]["wind"] == "calm"
         assert len(event_data["data"]["effects"]) == 1
 
