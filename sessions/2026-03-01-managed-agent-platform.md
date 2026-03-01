@@ -72,10 +72,22 @@ NATS subjects on `system.manage.>`:
 | test_agent_manager.py | 18 |
 | test_agent_runner.py | 11 |
 
+### Phase 10: Railway Deployment
+- Created MongoDB service via `railway add --database mongo` (production first, then staging via GraphQL API)
+- MongoDB service ID: `8e447683-8a14-4b59-882e-8e7ffa94490e`
+- Both staging and production have volumes at `/data/db`, auth credentials, and successful deployments
+- Set `MONGODB_URL` on agent-manager and agent-runner in both environments
+- All 4 new service instances running: agent-manager + agent-runner in staging + production
+- Created `docs/MANAGED-AGENTS.md` — full protocol guide for viewer integration (418 lines)
+
 ## Issues encountered
 - Ruff found unused imports (autofix resolved most)
 - Line too long in prompt generator (shortened text)
 - `agent.stop()` is sync on TradingAgent — test mocks produce RuntimeWarning (cosmetic only)
+- Mypy errors on bare `dict` return types in models.py — fixed with `dict[str, Any]`
+- Railway MongoDB: raw image service (`mongo:7`) doesn't auto-deploy or get volumes. Must use `railway add --database mongo` which properly sets up image, volume, auth, and initial deployment
+- Railway cross-environment services: services created after environment duplication only get instances in the active environment. Use `serviceInstanceUpdate` via GraphQL to create instance in other environment, then set source image and deploy
+- Railway CLI `railway up` fails for image-based services (tries to upload code). Use `serviceInstanceDeploy` via GraphQL instead, or deploy code-based services via CLI
 
 ## Key decisions
 - MongoDB via motor (async driver) with lazy client creation
@@ -84,15 +96,19 @@ NATS subjects on `system.manage.>`:
 - AgentRunner uses `claimed_by` field for horizontal scaling
 - Prompt generator falls back to generic medieval market for unknown archetypes
 - Rankings added to bridge snapshot (sync access to internal state)
+- Separate MongoDB instances per environment (staging/production) with different credentials
 
 ## How to verify
 ```bash
 make test   # 608 tests pass
 .venv/bin/ruff check .  # All checks passed
 .venv/bin/ruff format --check .  # All formatted
+railway logs --service agent-manager --environment staging  # Running
+railway logs --service agent-runner --environment staging   # Running
+railway logs --service agent-manager --environment production  # Running
+railway logs --service agent-runner --environment production   # Running
 ```
 
 ## Next step
-- Create Railway services (mongodb plugin, agent-manager, agent-runner) in staging/production
-- Build viewer UI for agent creation form
+- Build viewer UI for agent creation form (with Supabase Auth)
 - Integration test with real MongoDB + NATS
