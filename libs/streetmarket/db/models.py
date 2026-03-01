@@ -12,6 +12,7 @@ from __future__ import annotations
 import enum
 import time
 import uuid
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -56,17 +57,17 @@ class AgentConfig(BaseModel):
     created_at: float = Field(default_factory=time.time)
     updated_at: float = Field(default_factory=time.time)
 
-    def to_mongo(self) -> dict:
+    def to_mongo(self) -> dict[str, Any]:
         """Convert to MongoDB document."""
         return self.model_dump()
 
     @classmethod
-    def from_mongo(cls, doc: dict) -> AgentConfig:
+    def from_mongo(cls, doc: dict[str, Any]) -> AgentConfig:
         """Create from MongoDB document."""
         doc.pop("_id", None)
         return cls(**doc)
 
-    def to_public(self) -> dict:
+    def to_public(self) -> dict[str, Any]:
         """Convert to public-facing dict (no internal fields)."""
         data = self.model_dump()
         data.pop("claimed_by", None)
@@ -89,12 +90,12 @@ class User(BaseModel):
     created_at: float = Field(default_factory=time.time)
     updated_at: float = Field(default_factory=time.time)
 
-    def to_mongo(self) -> dict:
+    def to_mongo(self) -> dict[str, Any]:
         """Convert to MongoDB document."""
         return self.model_dump()
 
     @classmethod
-    def from_mongo(cls, doc: dict) -> User:
+    def from_mongo(cls, doc: dict[str, Any]) -> User:
         """Create from MongoDB document."""
         doc.pop("_id", None)
         return cls(**doc)
